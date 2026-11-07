@@ -22,7 +22,7 @@ module tb_xlr8;
     localparam logic [12:0] A_CTRL = 'h00, A_STATUS = 'h04, A_THREADS = 'h08, A_SRC = 'h0C,
                             A_DST = 'h10, A_PROG = 'h14, A_MBASE = 'h18, A_MLIM = 'h1C,
                             A_IRQ = 'h20, A_CYC = 'h24, A_XACT = 'h28, A_STALL = 'h2C,
-                            A_ERRA = 'h30, A_ID = 'h34, A_VER = 'h38, A_ARG0 = 'h3C, A_ARG1 = 'h40,
+                            A_ERRA = 'h30, A_ID = 'h34, A_VER = 'h38, A_ARG0 = 'h3C, A_ARG1 = 'h40, A_ARG2 = 'h44, A_ARG3 = 'h48, A_ARG4 = 'h4C, A_ARG5 = 'h50,
                             A_WIN = 'h1000;
 
     logic clk = 1'b0;
@@ -305,7 +305,7 @@ module tb_xlr8;
         logic [31:0] v;
         $display("test regs");
         reg_expect("ID", A_ID, 32'h584C5238);
-        reg_expect("VERSION", A_VER, 32'h0000_0100);
+        reg_expect("VERSION", A_VER, 32'h0000_0200);
         reg_expect("STATUS idle", A_STATUS, 32'h0);
         foreach_reg: begin
             logic [12:0] regs [6] = '{A_THREADS, A_SRC, A_DST, A_PROG, A_MBASE, A_MLIM};
@@ -321,9 +321,12 @@ module tb_xlr8;
                 wr(regs[r], 32'h0);
             end
         end
-        wr(A_ARG0, 32'h1111_2222); wr(A_ARG1, 32'h3333_4444);
-        reg_expect("ARG0", A_ARG0, 32'h1111_2222); reg_expect("ARG1", A_ARG1, 32'h3333_4444);
-        wr(A_ARG0, 0); wr(A_ARG1, 0);
+        for (int k = 0; k < 6; k++) wr(A_ARG0 + 13'(k * 4), 32'h1111_0000 + 32'(k) * 32'h0101);
+        for (int k = 0; k < 6; k++) reg_expect("ARGk", A_ARG0 + 13'(k * 4), 32'h1111_0000 + 32'(k) * 32'h0101);
+        axil_write(A_ARG5, 32'h0000_00EE, 4'b0001, resp_q);
+        reg_expect("ARG5 strobe", A_ARG5, 32'h1111_05EE);
+        for (int k = 0; k < 6; k++) wr(A_ARG0 + 13'(k * 4), 0);
+        rd_expect_err(13'h0054, "read past ARG5");
         wr(A_CTRL, 32'h4);
         reg_expect("CTRL irq_en", A_CTRL, 32'h4);
         wr(A_CTRL, 32'h0);
@@ -332,8 +335,8 @@ module tb_xlr8;
         reg_expect("STATUS bad_access", A_STATUS, 32'h8);
         wr_expect_err(A_ID, 32'h0, "write ID");
         wr_expect_err(A_CYC, 32'h0, "write CYCLES");
-        wr_expect_err(13'h0044, 32'h0, "write reserved reg");
-        rd_expect_err(13'h0044, "read reserved reg");
+        wr_expect_err(13'h0054, 32'h0, "write reserved reg");
+        rd_expect_err(13'h0054, "read reserved reg");
         rd_expect_err(13'h0100, "read unmapped 0x100");
         wr_expect_err(13'h0F00, 32'h0, "write unmapped 0xF00");
         rd_expect_err(13'h1800, "read unmapped 0x1800");
@@ -648,18 +651,24 @@ module tb_xlr8;
     task automatic t_ball();
         string pp, ppar, pout;
         int nf, fd;
+        bit ball_args;
         logic [31:0] v;
         void'($value$plusargs("ballprog=%s", pp));
         void'($value$plusargs("ballparams=%s", ppar));
         void'($value$plusargs("ballout=%s", pout));
         if (!$value$plusargs("frames=%d", nf)) nf = 1;
+        ball_args = $test$plusargs("ballargs");
         $readmemh(ppar, params);
         read_prog(pp);
         for (int w = 0; w < 512; w++) wr(A_WIN + 13'(w * 4), 32'h0);
         load_prog();
         fd = $fopen(pout, "w");
         for (int f = 0; f < nf; f++) begin
-            for (int i = 0; i < 5; i++) u_mem.mem[SRC + i] = params[f * 5 + i];
+            if (ball_args) begin
+                for (int i = 0; i < 5; i++) wr(A_ARG0 + 13'(i * 4), params[f * 5 + i]);
+            end else begin
+                for (int i = 0; i < 5; i++) u_mem.mem[SRC + i] = params[f * 5 + i];
+            end
             configure(4096, SRC, DST);
             launch_and_wait();
             rd(A_STATUS, v);

@@ -14,7 +14,7 @@
 //     write_addr not in {0,14,15}: regs[write_addr][l] <= write_data[l].
 //   - read: read_dataN[l] = special-reg mux for addr in {0,14,15},
 //     else regs[read_addrN][l].
-module regfile #(parameter int LANES = 4)(
+module regfile #(parameter int LANES = 4, parameter int NARGS = 0, parameter int ARG_BASE = 8)(
     input  logic              clk,
     input  logic              reset,
     input  logic              write_enable,
@@ -29,7 +29,11 @@ module regfile #(parameter int LANES = 4)(
     output logic [31:0]       read_data3 [LANES],
     input  logic [31:0]       tid_base,
     input  logic [31:0]       src_addr,
-    input  logic [31:0]       dst_addr
+    input  logic [31:0]       dst_addr,
+    // Kernel arguments: when load_args pulses, registers ARG_BASE..ARG_BASE+NARGS-1 of every lane
+    // are loaded from args[]. Ordinary registers: a kernel may overwrite them.
+    input  logic              load_args,
+    input  logic [31:0]       args [NARGS > 0 ? NARGS : 1]
 );
     logic [31:0] regs [0:15][0:LANES-1];
 
@@ -47,6 +51,10 @@ module regfile #(parameter int LANES = 4)(
             for (int r = 0; r < 16; r++)
                 for (int l = 0; l < LANES; l++)
                     regs[r][l] <= 32'b0;
+        end else if (NARGS > 0 && load_args) begin
+            for (int k = 0; k < NARGS; k++)
+                for (int l = 0; l < LANES; l++)
+                    regs[ARG_BASE + k][l] <= args[k];
         end else if (write_enable && write_addr != 4'd0 &&
                      write_addr != 4'd14 && write_addr != 4'd15) begin
             for (int l = 0; l < LANES; l++)

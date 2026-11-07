@@ -33,13 +33,16 @@
 struct work {
 	const char *name;
 	int w, h;
-	int kind;                       /* 0 ball, 1 gradient, 2 blur */
+	int kind;                       /* 0 ball, 1 gradient, 2 blur, 3 ball with kernel arguments (GPU only) */
 	uint32_t threads, src, dst;
 };
 static const struct work W_TABLE[] = {
 	{ "ball64",     64,  64,  0, 64 * 64,     0x2000, 0x6000 },
 	{ "ball128",    128, 128, 0, 128 * 128,   0x2000, 0x2010 },
 	{ "ball256",    256, 256, 0, 256 * 256,   0x2000, 0x2010 },
+	{ "ball64a",    64,  64,  3, 64 * 64,     0x2000, 0x6000 },
+	{ "ball128a",   128, 128, 3, 128 * 128,   0x2000, 0x2010 },
+	{ "ball256a",   256, 256, 3, 256 * 256,   0x2000, 0x2010 },
 	{ "gradient64", 64,  64,  1, 64 * 64,     0x2000, 0x6000 },
 	{ "blur64",     64,  64,  2, 0,           0x2000, 0x6000 },
 };
@@ -158,6 +161,7 @@ static int gpu_frame(struct gpu *g, const struct work *wk, long cx, long cy, lon
 		g->buf[wk->src + 0] = (uint32_t)cx; g->buf[wk->src + 1] = (uint32_t)cy; g->buf[wk->src + 2] = (uint32_t)r2;
 		g->buf[wk->src + 3] = BALL; g->buf[wk->src + 4] = BG;
 	}
+	const uint32_t kargs[5] = { (uint32_t)cx, (uint32_t)cy, (uint32_t)r2, BALL, BG };
 	t1 = ns(); t->prep = t1 - t0;
 	if (wk->kind == 2) {
 		static const uint32_t thr[2] = { BLUR_T1, BLUR_T2 }, base[2] = { 0, BLUR_BASE2 };
@@ -173,7 +177,8 @@ static int gpu_frame(struct gpu *g, const struct work *wk, long cx, long cy, lon
 		}
 		t1 = ns() - 0;
 	} else {
-		if ((ret = xlr8_submit(g->x, wk->threads, wk->src, wk->dst, 0))) return ret;
+		if ((ret = wk->kind == 3 ? xlr8_submit_args(g->x, wk->threads, wk->src, wk->dst, 0, kargs, 5)
+					 : xlr8_submit(g->x, wk->threads, wk->src, wk->dst, 0))) return ret;
 		t2 = ns(); t->submit = t2 - t1;
 		if ((ret = xlr8_wait(g->x, 0, &res))) return ret;
 		t3 = ns(); t->wait = t3 - t2;
@@ -216,6 +221,7 @@ int main(int argc, char **argv)
 		if (!strcmp(W_TABLE[i].name, wname)) wk = &W_TABLE[i];
 	if (!wk) { fprintf(stderr, "unknown workload %s\n", wname); return 2; }
 	int is_gpu = !strcmp(impl, "xlr8"), is_neon = !strcmp(impl, "neon");
+	if (wk->kind == 3 && !is_gpu) { fprintf(stderr, "%s runs on the GPU only\n", wk->name); return 2; }
 	if (!is_gpu && !is_neon && strcmp(impl, "scalar")) { fprintf(stderr, "unknown impl %s\n", impl); return 2; }
 #ifndef __ARM_NEON
 	if (is_neon) { fprintf(stderr, "built without NEON\n"); return 2; }
@@ -240,7 +246,7 @@ int main(int argc, char **argv)
 		struct anim v = a;
 		for (int n = 0; n < 8; n++) {
 			long cx = v.x >> 4, cy = v.y >> 4, r2 = radius * radius;
-			if (wk->kind == 0) scalar_ball(ref, wk->w, wk->h, cx, cy, r2);
+			if (wk->kind == 0 || wk->kind == 3) scalar_ball(ref, wk->w, wk->h, cx, cy, r2);
 			else if (wk->kind == 1) scalar_gradient(ref, wk->w, wk->h);
 			else scalar_blur(ref, blur_in, wk->w, wk->h);
 			if (is_gpu) {

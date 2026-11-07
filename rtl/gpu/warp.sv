@@ -18,7 +18,7 @@
 // `ready` is high in W_FETCH/W_EXEC and also W_MEM, so a warp waiting on memory
 // can still be granted the shared bus. mem_unit sees `mem_ready && grant` so it
 // only advances on the cycle it actually owns the bus.
-module warp #(parameter int LANES = 4, parameter int PC_W = 16, parameter bit FAST_DIV = 1'b1)(
+module warp #(parameter int LANES = 4, parameter int PC_W = 16, parameter bit FAST_DIV = 1'b1, parameter int NARGS = 0)(
     input  logic              clk,
     input  logic              reset,
     input  logic              start_warp,
@@ -36,6 +36,7 @@ module warp #(parameter int LANES = 4, parameter int PC_W = 16, parameter bit FA
     input  logic [31:0]       mem_rdata,
     input  logic              mem_ready,
     input  logic [15:0]       imem_rdata,
+    input  logic [31:0]       args [NARGS > 0 ? NARGS : 1],
     output logic              halted
 );
     typedef enum logic [2:0] {W_IDLE, W_FETCH, W_EXEC, W_MEM, W_HALT, W_DIV} state_t;
@@ -77,13 +78,14 @@ module warp #(parameter int LANES = 4, parameter int PC_W = 16, parameter bit FA
         .imm8(imm8), .legal(legal)
     );
 
-    regfile #(.LANES(LANES)) u_rf(
+    regfile #(.LANES(LANES), .NARGS(NARGS)) u_rf(
         .clk(clk), .reset(reset),
         .write_enable(w_en), .write_mask(lane_mask), .write_addr(waddr),
         .write_data(wdata),
         .read_addr1(rs1), .read_addr2(rs2), .read_addr3(rd),
         .read_data1(rd1), .read_data2(rd2), .read_data3(rd3),
-        .tid_base(tid_base), .src_addr(src_addr), .dst_addr(dst_addr)
+        .tid_base(tid_base), .src_addr(src_addr), .dst_addr(dst_addr),
+        .load_args(start_warp), .args(args)
     );
 
     generate

@@ -11,7 +11,8 @@
 // can raise an external abort in Linux); BAD_ACCESS still records the event.
 module xlr8_regs #(
     parameter bit          SLVERR_EN = 1'b1,
-    parameter logic [31:0] VERSION   = 32'h0000_0100
+    parameter int          NARGS     = 6,
+    parameter logic [31:0] VERSION   = 32'h0000_0200
 )(
     input  logic        clk,
     input  logic        rst,            // hard reset (aresetn)
@@ -46,8 +47,7 @@ module xlr8_regs #(
     output logic [31:0] mem_base,
     output logic [31:0] mem_limit,
     output logic [31:0] prog_base,
-    output logic [31:0] arg0,
-    output logic [31:0] arg1,
+    output logic [31:0] args [NARGS],       // active copies, preloaded into r8.. by the GPU
     input  logic        bridge_idle,
     input  logic        err_valid,
     input  logic [31:0] err_addr_in,
@@ -79,11 +79,13 @@ module xlr8_regs #(
                            R_DST = 6'd4,   R_PROG = 6'd5,    R_MBASE = 6'd6,    R_MLIM = 6'd7,
                            R_IRQ = 6'd8,   R_CYC = 6'd9,     R_XACT = 6'd10,    R_STALL = 6'd11,
                            R_ERRA = 6'd12, R_ID = 6'd13,     R_VER = 6'd14,     R_ARG0 = 6'd15,
-                           R_ARG1 = 6'd16;
+                           R_ARG1 = 6'd16, R_ARG2 = 6'd17, R_ARG3 = 6'd18, R_ARG4 = 6'd19,
+                           R_ARG5 = 6'd20;
 
     // ---------------------------------------------------------------- state
     logic        irq_en;
-    logic [31:0] sh_threads, sh_src, sh_dst, sh_prog, sh_mbase, sh_mlim, sh_arg0, sh_arg1;
+    logic [31:0] sh_threads, sh_src, sh_dst, sh_prog, sh_mbase, sh_mlim;
+    logic [31:0] sh_args [NARGS];
     logic        job_active, done_f, error_f, bad_f;
     logic [1:0]  irq_status;                 // [0] done, [1] error
     logic [31:0] err_addr_q;
@@ -139,7 +141,8 @@ module xlr8_regs #(
                             end
                         end
                     end
-                    R_THREADS, R_SRC, R_DST, R_PROG, R_MBASE, R_MLIM, R_IRQ, R_ARG0, R_ARG1: ;
+                    R_THREADS, R_SRC, R_DST, R_PROG, R_MBASE, R_MLIM, R_IRQ: ;
+                    R_ARG0, R_ARG1, R_ARG2, R_ARG3, R_ARG4, R_ARG5: ;
                     default: wr_err = 1'b1;     // read-only or reserved
                 endcase
             end else begin
@@ -159,9 +162,10 @@ module xlr8_regs #(
             s_axi_bvalid <= 1'b0; s_axi_bresp <= OKAY;
             irq_en <= 1'b0;
             sh_threads <= '0; sh_src <= '0; sh_dst <= '0; sh_prog <= '0;
-            sh_mbase <= '0; sh_mlim <= '0; sh_arg0 <= '0; sh_arg1 <= '0;
+            sh_mbase <= '0; sh_mlim <= '0;
+            for (int k = 0; k < NARGS; k++) begin sh_args[k] <= '0; args[k] <= '0; end
             gpu_threads <= '0; gpu_src <= '0; gpu_dst <= '0; mem_base <= '0; mem_limit <= '0;
-            prog_base <= '0; arg0 <= '0; arg1 <= '0;
+            prog_base <= '0;
             job_active <= 1'b0; done_f <= 1'b0; error_f <= 1'b0; bad_f <= 1'b0;
             irq_status <= 2'b00; err_addr_q <= '0; soft_cnt <= 4'd0; start_pulse_q <= 1'b0;
         end else begin
@@ -207,8 +211,8 @@ module xlr8_regs #(
                         R_PROG:    sh_prog    <= merge(sh_prog,    wd_q, ws_q);
                         R_MBASE:   sh_mbase   <= merge(sh_mbase,   wd_q, ws_q);
                         R_MLIM:    sh_mlim    <= merge(sh_mlim,    wd_q, ws_q);
-                        R_ARG0:    sh_arg0    <= merge(sh_arg0,    wd_q, ws_q);
-                        R_ARG1:    sh_arg1    <= merge(sh_arg1,    wd_q, ws_q);
+                        R_ARG0, R_ARG1, R_ARG2, R_ARG3, R_ARG4, R_ARG5:
+                            sh_args[3'(wr_idx - R_ARG0)] <= merge(sh_args[3'(wr_idx - R_ARG0)], wd_q, ws_q);
                         R_IRQ:     if (ws_q[0]) irq_status <= irq_status & ~wd_q[1:0];
                         default: ;
                     endcase
@@ -223,7 +227,7 @@ module xlr8_regs #(
             if (do_start) begin
                 gpu_threads <= sh_threads; gpu_src <= sh_src; gpu_dst <= sh_dst;
                 mem_base <= sh_mbase; mem_limit <= sh_mlim; prog_base <= sh_prog;
-                arg0 <= sh_arg0; arg1 <= sh_arg1;
+                for (int k = 0; k < NARGS; k++) args[k] <= sh_args[k];
                 job_active <= 1'b1;
                 done_f <= 1'b0; error_f <= 1'b0; bad_f <= 1'b0;
                 err_addr_q <= '0;
@@ -265,8 +269,7 @@ module xlr8_regs #(
                 R_ERRA:    rd_val = err_addr_q;
                 R_ID:      rd_val = ID_VALUE;
                 R_VER:     rd_val = VERSION;
-                R_ARG0:    rd_val = sh_arg0;
-                R_ARG1:    rd_val = sh_arg1;
+                R_ARG0, R_ARG1, R_ARG2, R_ARG3, R_ARG4, R_ARG5: rd_val = sh_args[3'(rd_idx - R_ARG0)];
                 default:   rd_err = 1'b1;
             endcase
         end else begin

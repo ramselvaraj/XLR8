@@ -29,7 +29,8 @@ def _ioc(d, nr, size):
 _INFO = struct.Struct("<16I")
 _PROG = struct.Struct("<QI3I")
 _BUF = struct.Struct("<4I")
-_SUBMIT = struct.Struct("<8I")
+_SUBMIT = struct.Struct("<12I")
+NARGS = 6
 _WAIT = struct.Struct("<10I")
 GET_INFO = _ioc(_IOC_READ, 0, _INFO.size)
 LOAD_PROG = _ioc(_IOC_WRITE, 1, _PROG.size)
@@ -106,14 +107,18 @@ class Device:
         self.words = memoryview(self._map).cast("I")      # 32-bit accesses, GPU word index
         return size
 
-    def submit(self, threads, src, dst, prog_base=0):
-        fcntl.ioctl(self.fd, SUBMIT, _SUBMIT.pack(threads, src, dst, prog_base, 0, 0, 0, 0))
+    def submit(self, threads, src, dst, prog_base=0, args=()):
+        args = list(args)
+        if len(args) > NARGS:
+            raise ValueError("at most %d kernel arguments" % NARGS)
+        args += [0] * (NARGS - len(args))
+        fcntl.ioctl(self.fd, SUBMIT, _SUBMIT.pack(threads, src, dst, prog_base, *[a & 0xFFFFFFFF for a in args], 0, 0))
 
     def wait(self, timeout_ms=0):
         out = fcntl.ioctl(self.fd, WAIT, _WAIT.pack(timeout_ms, 0, 0, 0, 0, 0, 0, 0, 0, 0))
         v = struct.unpack("<10I", out)
         return Result(v[2] | ST_DONE, v[3], v[4], v[5], v[6])
 
-    def run(self, threads, src, dst, prog_base=0, timeout_ms=0):
-        self.submit(threads, src, dst, prog_base)
+    def run(self, threads, src, dst, prog_base=0, timeout_ms=0, args=()):
+        self.submit(threads, src, dst, prog_base, args)
         return self.wait(timeout_ms)

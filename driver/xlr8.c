@@ -44,6 +44,7 @@
 #define R_ERRA       0x30
 #define R_ID         0x34
 #define R_VER        0x38
+#define R_ARG0       0x3c   /* ARG0..ARG5, 4 bytes apart (hardware 0.2+) */
 #define R_WIN        0x1000
 
 #define CTRL_START   BIT(0)
@@ -85,6 +86,7 @@ struct xlr8_dev {
 	wait_queue_head_t idle_wq;
 	struct delayed_work wd;
 	unsigned long irq_count;
+	u32 hw_version;
 };
 
 static inline u32 rd(struct xlr8_dev *d, u32 off) { return ioread32(d->regs + off); }
@@ -368,6 +370,8 @@ static long do_submit(struct xlr8_ctx *c, void __user *arg)
 		return -EINVAL;
 	if (s.prog_base >= XLR8_MAX_PROG)
 		return -EINVAL;
+	if (d->hw_version < 0x200 && !!memchr_inv(s.args, 0, sizeof(s.args)))
+		return -EOPNOTSUPP;
 
 	ret = wait_event_interruptible(d->idle_wq, try_claim(d, c));
 	if (ret)
@@ -384,6 +388,9 @@ static long do_submit(struct xlr8_ctx *c, void __user *arg)
 	wr(d, R_SRC, s.src);
 	wr(d, R_DST, s.dst);
 	wr(d, R_PROG, s.prog_base);
+	if (d->hw_version >= 0x200)
+		for (int k = 0; k < XLR8_NARGS; k++)
+			wr(d, R_ARG0 + 4 * k, s.args[k]);
 	wr(d, R_MBASE, lower_32_bits(c->dma));
 	wr(d, R_MLIM, c->size);
 	mod_delayed_work(system_wq, &d->wd, msecs_to_jiffies(job_timeout_ms));
@@ -540,6 +547,7 @@ static int xlr8_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "unexpected ID %08x (bitstream not loaded?)\n", id);
 		return -ENODEV;
 	}
+	d->hw_version = rd(d, R_VER);
 	wr(d, R_IRQ, 3);
 
 	ret = devm_request_irq(&pdev->dev, d->irq, xlr8_irq, 0, DRV_NAME, d);

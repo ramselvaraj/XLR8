@@ -33,6 +33,11 @@ for w in ball64 ball128 ball256 gradient64 blur64; do
   run xlr8   $w $nf
   bsudo "cd /home/xilinx/xlr8/bench && taskset -c 1 /usr/local/share/pynq-venv/bin/python src/bench_numpy.py $w $FRAMES 100 > out/numpy_$w.csv; tail -1 out/numpy_$w.csv"
 done
+for w in ball64a ball128a ball256a; do
+  nf=$FRAMES; case $w in ball128a|ball256a) nf=$(( FRAMES < 300 ? FRAMES : 300 ));; esac
+  echo "== $w (kernel arguments)"
+  run xlr8 $w $nf
+done
 mkdir -p results/bench
 bscp "$BOARD:xlr8/bench/out/*" results/bench/
 ls -la results/bench | head -30

@@ -15,7 +15,8 @@ module tb_regfile;
         .write_addr(waddr), .write_data(wdata),
         .read_addr1(ra1), .read_addr2(ra2), .read_addr3(ra3),
         .read_data1(rd1), .read_data2(rd2), .read_data3(rd3),
-        .tid_base(tid_base), .src_addr(src_addr), .dst_addr(dst_addr)
+        .tid_base(tid_base), .src_addr(src_addr), .dst_addr(dst_addr),
+        .load_args(1'b0), .args('{32'b0})
     );
 
     always #5 clk = ~clk;

@@ -39,13 +39,15 @@ def decode(instr):
     }
 
 
-def run(prog, data, threads, src, dst, max_steps=100000):
+def run(prog, data, threads, src, dst, max_steps=100000, args=None):
     """Execute `prog` for `threads` threads over `data` (mutated in place)."""
     for tid in range(threads):
         regs = [0] * 16
         regs[0] = tid & MASK32
         regs[14] = src & MASK32
         regs[15] = dst & MASK32
+        for k, v in enumerate(args or []):       # kernel arguments: r8.. (XLR8 ARG0..)
+            regs[8 + k] = v & MASK32
         pc = 0
         steps = 0
         n = z = p = 0

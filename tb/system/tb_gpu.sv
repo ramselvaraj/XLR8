@@ -26,6 +26,7 @@ module tb_gpu;
     parameter int WORDS      = 1 << ADDR_W;
     parameter int PROG_WORDS = 1024;
     parameter bit FAST_DIV   = 1;
+    parameter int NARGS      = 0;               // >0 enables the kernel-argument preload (r8..)
     localparam int TB        = WARPS * LANES;   // physical threads per wave
 
     logic              clk = 1'b0;
@@ -55,9 +56,13 @@ module tb_gpu;
     int unsigned cycles;
     integer i;
 
-    simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W), .FAST_DIV(FAST_DIV)) dut(
+    logic [31:0] args_q [NARGS > 0 ? NARGS : 1];
+    logic [31:0] argv6 [6];
+    always_comb for (int k = 0; k < (NARGS > 0 ? NARGS : 1); k++) args_q[k] = argv6[k];
+    simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W), .FAST_DIV(FAST_DIV), .NARGS(NARGS)) dut(
         .clk(clk), .reset(reset), .start(start),
         .thread_count(thread_count), .src_addr(src_addr), .dst_addr(dst_addr),
+        .args(args_q),
         .busy(busy), .done(done),
         .imem_addr(imem_addr), .imem_rdata(imem_rdata),
         .mem_req(mem_req), .mem_we(mem_we),
@@ -159,6 +164,13 @@ module tb_gpu;
 
         src_addr = src;
         dst_addr = dst;
+        for (int k = 0; k < 6; k++) argv6[k] = 32'b0;
+        void'($value$plusargs("arg0=%d", argv6[0]));   // +arg0=<n> ... +arg5=<n>, used when NARGS > 0
+        void'($value$plusargs("arg1=%d", argv6[1]));
+        void'($value$plusargs("arg2=%d", argv6[2]));
+        void'($value$plusargs("arg3=%d", argv6[3]));
+        void'($value$plusargs("arg4=%d", argv6[4]));
+        void'($value$plusargs("arg5=%d", argv6[5]));
 
         repeat (2) @(posedge clk);
         reset = 1'b0;

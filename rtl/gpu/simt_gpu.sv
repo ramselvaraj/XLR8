@@ -13,7 +13,8 @@ module simt_gpu #(
     parameter int LANES = 4,
     parameter int PC_W  = 16,
     parameter bit LOCK_MEMORY_OWNER = 0,
-    parameter bit FAST_DIV = 1
+    parameter bit FAST_DIV = 1,
+    parameter int NARGS = 0
 )(
     input  logic            clk,
     input  logic            reset,
@@ -21,6 +22,7 @@ module simt_gpu #(
     input  logic [31:0]     thread_count,
     input  logic [31:0]     src_addr,
     input  logic [31:0]     dst_addr,
+    input  logic [31:0]     args [NARGS > 0 ? NARGS : 1],   // preloaded into r8.. at each wave start
     output logic            busy,
     output logic            done,
     // Instruction memory (combinational read)
@@ -83,7 +85,7 @@ module simt_gpu #(
 
     generate
         for (genvar w = 0; w < WARPS; w++) begin : g_warp
-            warp #(.LANES(LANES), .PC_W(PC_W), .FAST_DIV(FAST_DIV)) u_warp(
+            warp #(.LANES(LANES), .PC_W(PC_W), .FAST_DIV(FAST_DIV), .NARGS(NARGS)) u_warp(
                 .clk(clk), .reset(reset),
                 .start_warp(warp_start[w]),
                 .tid_base(warp_tid_base[w]),
@@ -96,6 +98,7 @@ module simt_gpu #(
                 .mem_addr(w_mem_addr[w]), .mem_wdata(w_mem_wdata[w]),
                 .mem_rdata(mem_rdata), .mem_ready(mem_ready),
                 .imem_rdata(imem_rdata),
+                .args(args),
                 .halted(warp_halted[w])
             );
         end

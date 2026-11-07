@@ -32,6 +32,7 @@ module tb_branch;
     simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W)) dut(
         .clk(clk), .reset(reset), .start(start),
         .thread_count(thread_count), .src_addr(src_addr), .dst_addr(dst_addr),
+        .args('{32'b0}),
         .busy(busy), .done(done),
         .imem_addr(imem_addr), .imem_rdata(imem_rdata),
         .mem_req(mem_req), .mem_we(mem_we),

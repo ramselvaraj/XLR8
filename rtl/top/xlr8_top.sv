@@ -11,7 +11,8 @@ module xlr8_top #(
     parameter int  WARPS     = 2,
     parameter int  LANES     = 4,
     parameter bit  SLVERR_EN = 1'b1,
-    parameter int  ID_W      = 6
+    parameter int  ID_W      = 6,
+    parameter int  NARGS     = 6
 )(
     input  logic        aclk,
     input  logic        aresetn,
@@ -94,9 +95,10 @@ module xlr8_top #(
     logic        mem_req, mem_we, mem_ready;
     logic [31:0] mem_addr, mem_wdata, mem_rdata;
 
-    simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W), .LOCK_MEMORY_OWNER(1'b1), .FAST_DIV(1'b0)) u_gpu (
+    simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W), .LOCK_MEMORY_OWNER(1'b1), .FAST_DIV(1'b0), .NARGS(NARGS)) u_gpu (
         .clk(aclk), .reset(gpu_rst), .start(gpu_start),
         .thread_count(gpu_threads), .src_addr(gpu_src), .dst_addr(gpu_dst),
+        .args(args),
         .busy(gpu_busy), .done(gpu_done),
         .imem_addr(imem_addr), .imem_rdata(imem_rdata),
         .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr), .mem_wdata(mem_wdata),
@@ -104,7 +106,8 @@ module xlr8_top #(
     );
 
     // registers
-    logic [31:0] mem_base, mem_limit, prog_base, arg0, arg1;
+    logic [31:0] mem_base, mem_limit, prog_base;
+    logic [31:0] args [NARGS];
     logic        bridge_idle, err_valid;
     logic [31:0] err_addr;
     logic        pw_we;
@@ -114,7 +117,7 @@ module xlr8_top #(
     logic        perf_clear;
     logic [31:0] perf_cycles, perf_xacts, perf_stalls;
 
-    xlr8_regs #(.SLVERR_EN(SLVERR_EN)) u_regs (
+    xlr8_regs #(.SLVERR_EN(SLVERR_EN), .NARGS(NARGS)) u_regs (
         .clk(aclk), .rst(hard_rst),
         .s_axi_awaddr(s_axi_ctrl_awaddr), .s_axi_awvalid(s_axi_ctrl_awvalid), .s_axi_awready(s_axi_ctrl_awready),
         .s_axi_wdata(s_axi_ctrl_wdata), .s_axi_wstrb(s_axi_ctrl_wstrb), .s_axi_wvalid(s_axi_ctrl_wvalid),
@@ -125,7 +128,7 @@ module xlr8_top #(
         .s_axi_rready(s_axi_ctrl_rready),
         .gpu_start(gpu_start), .gpu_threads(gpu_threads), .gpu_src(gpu_src), .gpu_dst(gpu_dst),
         .gpu_done(gpu_done),
-        .mem_base(mem_base), .mem_limit(mem_limit), .prog_base(prog_base), .arg0(arg0), .arg1(arg1),
+        .mem_base(mem_base), .mem_limit(mem_limit), .prog_base(prog_base), .args(args),
         .bridge_idle(bridge_idle), .err_valid(err_valid), .err_addr_in(err_addr),
         .pw_we(pw_we), .pw_waddr(pw_waddr), .pw_wdata(pw_wdata), .pw_wstrb(pw_wstrb),
         .pw_raddr(pw_raddr), .pw_rdata(pw_rdata),
@@ -174,5 +177,5 @@ module xlr8_top #(
     );
 
     logic unused;
-    assign unused = &{1'b0, gpu_busy, arg0, arg1, imem_addr[PC_W-1:10], prog_base[31:10]};
+    assign unused = &{1'b0, gpu_busy, imem_addr[PC_W-1:10], prog_base[31:10]};
 endmodule

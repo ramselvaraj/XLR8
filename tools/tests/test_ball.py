@@ -44,7 +44,16 @@ EDGE_CASES = {
 
 
 def main():
-    ball = run_ball.Ball()
+    fails = 0
+    for name, kw in (("parameter block", {}), ("kernel arguments", dict(kernel=os.path.join(run_ball.ROOT, "sw", "kernels", "ball_args.asm"), args_mode=True, workdir=os.path.join(run_ball.ROOT, "build", "ball_args")))):
+        print(f"== ball kernel with {name}")
+        fails += one(run_ball.Ball(**kw))
+    if fails:
+        sys.exit(f"FAIL: {fails} mismatches")
+    print("PASS: ball kernels exact on animation, edge cases and fuzz (parameter block and kernel arguments)")
+
+
+def one(ball):
     fails = 0
 
     def run(label, params, rtl=True):
@@ -71,9 +80,7 @@ def main():
         run(f"fuzz {n}", p, rtl=(n < FUZZ_RTL))
     print(f"fuzz: {FUZZ_ISA} ISA, {FUZZ_RTL} RTL done")
 
-    if fails:
-        sys.exit(f"FAIL: {fails} mismatches")
-    print("PASS: ball kernel exact on animation, edge cases and fuzz")
+    return fails
 
 
 if __name__ == "__main__":

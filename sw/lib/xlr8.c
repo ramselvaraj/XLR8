@@ -154,18 +154,26 @@ int xlr8_alloc(xlr8_t *x, size_t bytes)
 uint32_t *xlr8_buf(xlr8_t *x)      { return x ? x->buf : NULL; }
 size_t    xlr8_buf_size(xlr8_t *x) { return x ? x->size : 0; }
 
-int xlr8_submit(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t prog_base)
+int xlr8_submit_args(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t prog_base,
+		     const uint32_t *args, size_t nargs)
 {
 	struct xlr8_submit s;
 
-	if (!x)
+	if (!x || nargs > XLR8_NARGS || (nargs && !args))
 		return -EINVAL;
 	memset(&s, 0, sizeof(s));
 	s.threads = threads;
 	s.src = src;
 	s.dst = dst;
 	s.prog_base = prog_base;
+	if (nargs)
+		memcpy(s.args, args, nargs * sizeof(uint32_t));
 	return call(x, XLR8_IOC_SUBMIT, &s);
+}
+
+int xlr8_submit(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t prog_base)
+{
+	return xlr8_submit_args(x, threads, src, dst, prog_base, NULL, 0);
 }
 
 int xlr8_wait(xlr8_t *x, unsigned timeout_ms, struct xlr8_result *res)
@@ -194,6 +202,14 @@ int xlr8_run(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t p
 	     unsigned timeout_ms, struct xlr8_result *res)
 {
 	int ret = xlr8_submit(x, threads, src, dst, prog_base);
+
+	return ret ? ret : xlr8_wait(x, timeout_ms, res);
+}
+
+int xlr8_run_args(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t prog_base,
+		  const uint32_t *args, size_t nargs, unsigned timeout_ms, struct xlr8_result *res)
+{
+	int ret = xlr8_submit_args(x, threads, src, dst, prog_base, args, nargs);
 
 	return ret ? ret : xlr8_wait(x, timeout_ms, res);
 }

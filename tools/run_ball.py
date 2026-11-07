@@ -21,18 +21,21 @@ import isa_sim      # noqa: E402
 
 KERNEL = os.path.join(ROOT, "sw", "kernels", "ball.asm")
 BINARY = os.path.join(ROOT, "build", "obj", "Vtb_gpu")
+BINARY_ARGS = os.path.join(ROOT, "build", "obj_args", "Vtb_gpu")      # built with NARGS=6
 WORDS = 32768
 
 
 class Ball:
-    def __init__(self, workdir=None, kernel=KERNEL, binary=BINARY):
+    def __init__(self, workdir=None, kernel=KERNEL, binary=None, args_mode=False):
+        self.args_mode = args_mode
+        binary = binary or (BINARY_ARGS if args_mode else BINARY)
         self.workdir = os.path.abspath(workdir or os.path.join(ROOT, "build", "ball"))
         os.makedirs(self.workdir, exist_ok=True)
         self.binary = binary
         with open(kernel) as f:
             self.prog, self.meta = assemble.assemble(f.read())[:2]
         self.threads = self.meta["threads"]
-        self.src, self.dst = self.meta["src"], self.meta["dst"]
+        self.src, self.dst = self.meta.get("src", 0x2000), self.meta["dst"]
         self.prog_hex = os.path.join(self.workdir, "prog.hex")
         with open(self.prog_hex, "w") as f:
             f.write("".join(f"{w & 0xFFFF:04x}\n" for w in self.prog))
@@ -42,8 +45,9 @@ class Ball:
     def render_isa(self, params):
         data = [0] * WORDS
         block = ball_ref.param_block(*params)
-        data[self.src:self.src + len(block)] = block
-        isa_sim.run(self.prog, data, self.threads, self.src, self.dst)
+        if not self.args_mode:
+            data[self.src:self.src + len(block)] = block
+        isa_sim.run(self.prog, data, self.threads, self.src, self.dst, args=block if self.args_mode else None)
         return data[self.dst:self.dst + ball_ref.W * ball_ref.H]
 
     def render_rtl(self, params):
@@ -52,6 +56,8 @@ class Ball:
         cmd = [self.binary, f"+frame={self.frame_hex}", f"+prog={self.prog_hex}",
                f"+out={self.out_hex}", f"+count={self.threads}",
                f"+src={self.src}", f"+dst={self.dst}"]
+        if self.args_mode:
+            cmd += [f"+arg{k}={v}" for k, v in enumerate(ball_ref.param_block(*params))]
         subprocess.run(cmd, check=True, cwd=self.workdir, stdout=subprocess.DEVNULL)
         data = isa_sim.read_hex_words(self.out_hex)
         return data[self.dst:self.dst + ball_ref.W * ball_ref.H]

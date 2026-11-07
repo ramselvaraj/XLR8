@@ -9,10 +9,11 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
-#define XLR8_UAPI_VERSION   1
+#define XLR8_UAPI_VERSION   2
 #define XLR8_ID_VALUE       0x584C5238u     /* "XLR8" */
 #define XLR8_MAX_PROG       1024            /* GPU instructions (16 bit each) */
 #define XLR8_MAX_BUF        (64u << 20)     /* largest per-file buffer, bytes */
+#define XLR8_NARGS          6               /* kernel arguments, preloaded into r8..r13 */
 
 /* xlr8_wait.status bits: the hardware STATUS register plus driver flags */
 #define XLR8_ST_DONE        (1u << 1)
@@ -47,7 +48,10 @@ struct xlr8_submit {
 	__u32 src;              /* GPU word offset, loaded into r14 */
 	__u32 dst;              /* GPU word offset, loaded into r15 */
 	__u32 prog_base;        /* instruction index */
-	__u32 reserved[4];
+	__u32 args[XLR8_NARGS]; /* kernel arguments: arg k is in register r(8+k) at the start of each wave.
+				 * Ordinary registers, so a kernel may overwrite them. Needs hardware 0.2+;
+				 * nonzero args on older hardware return -EOPNOTSUPP. */
+	__u32 reserved[2];
 };
 
 struct xlr8_wait {

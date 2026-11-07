@@ -22,7 +22,8 @@ def write(name, prog):
 
 
 for name, kernel in (("ball64.hex", "ball.asm"), ("ball128.hex", "ball128.asm"), ("ball256.hex", "ball256.asm"),
-                     ("gradient64.hex", "gradient.asm")):
+                     ("gradient64.hex", "gradient.asm"), ("ball64a.hex", "ball_args.asm"),
+                     ("ball128a.hex", "ball128_args.asm"), ("ball256a.hex", "ball256_args.asm")):
     prog, _ = assemble.assemble(open(os.path.join(ROOT, "sw", "kernels", kernel)).read())[:2]
     write(name, prog)
 

@@ -41,7 +41,7 @@ static int f_ioctl(int fd, unsigned long req, void *arg)
 		fk.prog = *p; memcpy(fk.prog_data, (void *)(uintptr_t)p->instrs, p->count * 2); return 0; }
 	case 2: { struct xlr8_buf *b = arg; if (!z(b->reserved, 3)) fk.reserved_dirty++;
 		fk.buf = *b; b->size = (b->size + 4095) & ~4095u; return 0; }
-	case 3: { struct xlr8_submit *s = arg; if (!z(s->reserved, 4)) fk.reserved_dirty++; fk.submit = *s; return 0; }
+	case 3: { struct xlr8_submit *s = arg; if (!z(s->reserved, 2)) fk.reserved_dirty++; fk.submit = *s; return 0; }
 	case 4: { struct xlr8_wait *w = arg; if (w->reserved_in || !z(w->reserved_out, 3)) fk.reserved_dirty++;
 		fk.wait = *w; w->status = XLR8_ST_DONE; w->cycles = 1234; w->xacts = 56; w->stalls = 78; w->err_addr = 9; return 0; }
 	}
@@ -136,6 +136,18 @@ int main(void)
 	CHECK(xlr8_run(x, 1, 0, 0, 0, 0, &res) == -EBUSY && fk.ioctls == before + 1, "run stops at a failed submit");
 	fk.ioctl_errno[3] = 0;
 	CHECK(xlr8_run(x, 8, 1, 2, 0, 5, &res) == 0 && res.cycles == 1234, "run ok");
+	{
+		uint32_t a[3] = { 11, 22, 33 }, big[XLR8_NARGS + 1] = { 0 };
+		CHECK(xlr8_submit_args(x, 9, 1, 2, 3, a, 3) == 0 && fk.submit.args[0] == 11 && fk.submit.args[1] == 22 &&
+		      fk.submit.args[2] == 33 && fk.submit.args[3] == 0 && fk.submit.args[XLR8_NARGS - 1] == 0, "submit_args fields");
+		CHECK(xlr8_submit_args(x, 9, 1, 2, 3, big, XLR8_NARGS + 1) == -EINVAL, "too many args");
+		CHECK(xlr8_submit_args(x, 9, 1, 2, 3, NULL, 2) == -EINVAL, "args NULL with nargs");
+		CHECK(xlr8_submit(x, 9, 1, 2, 3) == 0 && fk.submit.args[0] == 0, "plain submit sends zero args");
+		fk.ioctl_errno[3] = EOPNOTSUPP;
+		CHECK(xlr8_run_args(x, 9, 1, 2, 3, a, 3, 0, &res) == -EOPNOTSUPP, "old hardware: EOPNOTSUPP");
+		fk.ioctl_errno[3] = 0;
+		CHECK(xlr8_run_args(x, 9, 1, 2, 3, a, 3, 0, &res) == 0 && res.cycles == 1234, "run_args");
+	}
 	CHECK(xlr8_submit(NULL, 1, 0, 0, 0) == -EINVAL && xlr8_wait(NULL, 0, &res) == -EINVAL, "NULL handles");
 	CHECK(fk.reserved_dirty == 0, "library left reserved ioctl fields nonzero %d times", fk.reserved_dirty);
 

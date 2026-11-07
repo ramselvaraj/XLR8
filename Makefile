@@ -19,9 +19,10 @@ UNIT_SRC_tb_scheduler  := rtl/gpu/scheduler.sv  tb/unit/tb_scheduler.sv
 UNIT_SRC_tb_branch     := $(GPU_RTL)            tb/unit/tb_branch.sv
 
 SEQ_OBJ := build/obj_seqdiv
+ARGS_OBJ := build/obj_args
 
 PHONY_EXTRA := test-sw
-.PHONY: test-sw all venv build build-seqdiv test-div lint unit test-unit test-py test-ball test-gpu build-xlr8 prog test-xlr8 test-ball-axi test clean
+.PHONY: test-sw all venv build build-seqdiv build-args test-div lint unit test-unit test-py test-ball test-gpu build-xlr8 prog test-xlr8 test-ball-axi test clean
 
 all: build
 
@@ -45,6 +46,11 @@ SEEDS    ?= 1 2
 build-seqdiv:
 	mkdir -p $(SEQ_OBJ)
 	$(VERILATOR) --binary --timing --top-module tb_gpu -GFAST_DIV=0 -f rtl/gpu/files.txt --Mdir $(SEQ_OBJ)
+
+# NARGS=6: the kernel-argument preload that XLR8 uses (r8..r13 loaded from ARG0..ARG5 at each wave start)
+build-args:
+	mkdir -p $(ARGS_OBJ)
+	$(VERILATOR) --binary --timing --top-module tb_gpu -GNARGS=6 -f rtl/gpu/files.txt --Mdir $(ARGS_OBJ)
 
 test-div: build build-seqdiv
 	$(PY) tools/tests/test_div.py
@@ -75,6 +81,8 @@ test-ball-axi: build-xlr8
 	$(PY) tools/run_ball_axi.py --frames 100 --stall 0
 	$(PY) tools/run_ball_axi.py --frames 100 --stall 50 --seed 2
 	$(PY) tools/run_ball_axi.py --frames 30 --stall 90 --seed 3
+	$(PY) tools/run_ball_axi.py --frames 100 --stall 0 --args
+	$(PY) tools/run_ball_axi.py --frames 100 --stall 50 --seed 4 --args
 
 unit:
 	@test -n "$(TEST)" || (echo "usage: make unit TEST=<$(UNIT_TESTS)>"; exit 1)
@@ -90,7 +98,7 @@ test-py:
 	$(PY) tools/tests/test_blur_border.py
 
 # Phase 1: ball kernel vs independent reference, ISA sim and RTL.
-test-ball: build
+test-ball: build build-args
 	$(PY) tools/tests/test_ball.py
 	$(PY) tools/tests/test_kernels.py
 

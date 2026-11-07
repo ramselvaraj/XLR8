@@ -49,9 +49,15 @@ uint32_t *xlr8_buf(xlr8_t *x);
 size_t    xlr8_buf_size(xlr8_t *x);
 
 int  xlr8_submit(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t prog_base);
+/* Same, with kernel arguments: arg k reaches the kernel in register r(8+k). nargs <= XLR8_NARGS, the
+ * rest are zero. Needs hardware 0.2 or newer (-EOPNOTSUPP otherwise). */
+int  xlr8_submit_args(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t prog_base,
+		      const uint32_t *args, size_t nargs);
 int  xlr8_wait(xlr8_t *x, unsigned timeout_ms, struct xlr8_result *res);   /* timeout 0 = default */
 int  xlr8_run(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t prog_base,
 	      unsigned timeout_ms, struct xlr8_result *res);                /* submit + wait */
+int  xlr8_run_args(xlr8_t *x, uint32_t threads, uint32_t src, uint32_t dst, uint32_t prog_base,
+		   const uint32_t *args, size_t nargs, unsigned timeout_ms, struct xlr8_result *res);
 
 const char *xlr8_strerror(int err);
 

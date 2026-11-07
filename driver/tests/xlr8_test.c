@@ -24,8 +24,8 @@
 static int failures;
 #define CHECK(cond, ...) do { if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
-static uint16_t ball_prog[XLR8_MAX_PROG];
-static int ball_len;
+static uint16_t ball_prog[XLR8_MAX_PROG], ball_args_prog[XLR8_MAX_PROG];
+static int ball_len, ball_args_len;
 
 static int load_hex(const char *path, uint16_t *out)
 {
@@ -207,7 +207,7 @@ static void t_badargs(void)
 	p.reserved[0] = 0; p.instrs = 0x10;
 	CHECK(ioctl(fd, XLR8_IOC_LOAD_PROG, &p) == -1 && errno == EFAULT, "LOAD_PROG bad pointer");
 	/* SUBMIT / WAIT field checks */
-	memset(&s, 0, sizeof(s)); s.reserved[3] = 1;
+	memset(&s, 0, sizeof(s)); s.reserved[1] = 1;
 	CHECK(ioctl(fd, XLR8_IOC_SUBMIT, &s) == -1 && errno == EINVAL, "SUBMIT reserved");
 	memset(&s, 0, sizeof(s)); s.prog_base = XLR8_MAX_PROG;
 	CHECK(ioctl(fd, XLR8_IOC_SUBMIT, &s) == -1 && errno == EINVAL, "SUBMIT prog_base range");
@@ -219,6 +219,32 @@ static void t_badargs(void)
 	CHECK(r == 0 || errno == ENOMEM, "SET_BUF max: %s", strerror(errno));
 	close(fd);
 	printf("badargs: done\n");
+}
+
+/* kernel arguments: the same animation with the parameters in r8..r12 instead of memory */
+static void t_args(int frames)
+{
+	struct dev d; struct anim a; struct xlr8_wait w; unsigned long cyc = 0, xa = 0;
+	int bad_frames = 0;
+	struct xlr8_buf b = { .size = BUF_BYTES };
+	(void)b;
+	CHECK(dev_open(&d, 1) == 0, "open");
+	CHECK(load_prog(d.fd, ball_args_prog, ball_args_len) == 0, "load args kernel");
+	anim_init(&a);
+	for (int n = 0; n < frames; n++) {
+		long cx = a.x >> 4, cy = a.y >> 4;
+		struct xlr8_submit s = { .threads = W * H, .src = SRC_W, .dst = DST_W,
+					 .args = { (uint32_t)cx, (uint32_t)cy, 49, BALL, BG } };
+		CHECK(ioctl(d.fd, XLR8_IOC_SUBMIT, &s) == 0, "submit %d: %s", n, strerror(errno));
+		int bad = wait_check(&d, cx, cy, 49, &w, 0);
+		if (bad != 0) { bad_frames++; if (bad_frames < 4) printf("args frame %d: bad=%d status=%x\n", n, bad, w.status); }
+		cyc += w.cycles; xa += w.xacts;
+		anim_step(&a, 7);
+	}
+	CHECK(bad_frames == 0, "%d of %d argument frames wrong", bad_frames, frames);
+	printf("args: %d frames exact=%d, mean CYCLES=%lu, bus transactions per frame=%lu\n", frames, frames - bad_frames, cyc / frames, xa / frames);
+	CHECK(xa / frames == W * H, "expected 1 transaction per pixel, saw %lu per frame", xa / frames);
+	dev_close(&d);
 }
 
 static void t_timeout(void)
@@ -362,9 +388,11 @@ int main(int argc, char **argv)
 	int leak = argc > 3 ? atoi(argv[3]) : 2000;
 	if (argc < 2) { fprintf(stderr, "usage: %s ball.hex [frames] [leak_iters]\n", argv[0]); return 2; }
 	ball_len = load_hex(argv[1], ball_prog);
+	if (argc > 4) ball_args_len = load_hex(argv[4], ball_args_prog);
 	t_info();
 	t_badargs();
 	t_frames(frames);
+	if (ball_args_len) t_args(frames);
 	t_timeout();
 	t_poll();
 	t_concurrent();
