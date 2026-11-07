@@ -94,7 +94,7 @@ module xlr8_top #(
     logic        mem_req, mem_we, mem_ready;
     logic [31:0] mem_addr, mem_wdata, mem_rdata;
 
-    simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W), .LOCK_MEMORY_OWNER(1'b1)) u_gpu (
+    simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W), .LOCK_MEMORY_OWNER(1'b1), .FAST_DIV(1'b0)) u_gpu (
         .clk(aclk), .reset(gpu_rst), .start(gpu_start),
         .thread_count(gpu_threads), .src_addr(gpu_src), .dst_addr(gpu_dst),
         .busy(gpu_busy), .done(gpu_done),

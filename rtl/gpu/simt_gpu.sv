@@ -12,7 +12,8 @@ module simt_gpu #(
     parameter int WARPS = 2,
     parameter int LANES = 4,
     parameter int PC_W  = 16,
-    parameter bit LOCK_MEMORY_OWNER = 0
+    parameter bit LOCK_MEMORY_OWNER = 0,
+    parameter bit FAST_DIV = 1
 )(
     input  logic            clk,
     input  logic            reset,
@@ -82,7 +83,7 @@ module simt_gpu #(
 
     generate
         for (genvar w = 0; w < WARPS; w++) begin : g_warp
-            warp #(.LANES(LANES), .PC_W(PC_W)) u_warp(
+            warp #(.LANES(LANES), .PC_W(PC_W), .FAST_DIV(FAST_DIV)) u_warp(
                 .clk(clk), .reset(reset),
                 .start_warp(warp_start[w]),
                 .tid_base(warp_tid_base[w]),

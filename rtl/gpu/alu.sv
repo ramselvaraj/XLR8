@@ -9,7 +9,7 @@
 // MUL: a * b          DIV: a / b (unsigned; b==0 -> 0)
 // AND: a & b          OR:  a | b          XOR: a ^ b
 // SLL: a << b[4:0]    SRL: a >> b[4:0]
-module alu(
+module alu #(parameter bit HAS_DIV = 1'b1)(
     input  logic [31:0] a,
     input  logic [31:0] b,
     input  logic [3:0]  op,
@@ -20,7 +20,10 @@ module alu(
             4'd0: result = a + b;             // ADD
             4'd1: result = a - b;             // SUB
             4'd2: result = a * b;             // MUL
-            4'd3: result = (b == 0) ? 32'b0 : a / b;  // DIV (unsigned)
+            4'd3: begin                       // DIV (unsigned); HAS_DIV=0 leaves it to seq_div
+                if (HAS_DIV) result = (b == 0) ? 32'b0 : a / b;
+                else         result = 32'b0;
+            end
             4'd4: result = a & b;             // AND
             4'd5: result = a | b;             // OR
             4'd6: result = a ^ b;             // XOR

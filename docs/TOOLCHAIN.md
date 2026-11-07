@@ -1,29 +1,35 @@
 # Toolchain
 
-Status of each item as of Phase 0. "Verified" means checked on this machine or in existing
-project docs. "Open" means it needs a decision or a check on real hardware.
+All items verified 2026-11-07 on the actual machines.
 
-| Item | Status | Detail |
-|---|---|---|
-| Simulator | Verified | Verilator 5.052 at `/usr/bin/verilator` (Linux, this machine) |
-| Python | Verified | `python3`, project venv at `.venv` (numpy, Pillow) via `make venv` or `uv` |
-| Lint | Verified | `make lint` clean (`verilator --lint-only -Wall`) |
-| Device-tree compiler | Verified | `/usr/bin/dtc` |
-| Host C compiler | Verified | `/usr/bin/gcc` |
-| Vivado | **Open** | Not on this Linux machine's PATH, and no Xilinx folder found on the mounted Windows drive. Existing rv32-linux build used `vivado -mode batch` with TUL board files, so Vivado is installed somewhere (likely a Windows install or another machine). Record where. |
-| Board files | Open | rv32-linux used TUL `pynq-z2/A.0/board.xml`. Reuse. |
-| Board image | Open | rv32-linux README says verified on a PYNQ v2.7 image. Confirm the version and `uname -r` on the board. |
-| ARM cross compiler | **Open** | `arm-linux-gnueabihf-gcc` is not installed. Install it (Arch: `arm-linux-gnueabihf-gcc`) or build natively on the board. |
-| Kernel headers | Open | An out-of-tree module needs headers matching the board's kernel. |
-| Board access | Open | No serial device seen on this machine. Record serial, SSH, and file-copy method. |
+| Item | Value |
+|---|---|
+| Simulator | Verilator 5.052 (`/usr/bin/verilator`, Linux host) |
+| Python | `python3`, venv `.venv` (numpy, Pillow), created with `uv venv` |
+| Vivado | 2026.1 at `/mnt/windows/vivado_linux/2026.1/Vivado/bin/vivado`, runs on the Linux host (2025.2 install there is partial, no `bin/`) |
+| Board files | TUL `pynq-z2/A.0/board.xml`, from `linux_projects/rv32-linux/build/fpga/board_repo` (override with `XLR8_BOARD_REPO`) |
+| FPGA part | `xc7z020clg400-1`, board part `tul.com.tw:pynq-z2:part0:1.0` |
+| Board | PYNQ-Z2 at `192.168.0.4` (Wi-Fi), user `xilinx`, SSH password auth |
+| Board OS | PynqLinux (Ubuntu 22.04), kernel `5.15.19-xilinx-v2022.1`, armv7l, 2 cores |
+| Board memory | `mem=448M` from `/boot/uEnv.txt` (rv32-linux reservation, top 64 MiB of DDR is not Linux's), 430 MB visible, CMA 128 MB (`CONFIG_DMA_CMA=y`) |
+| Board kernel features | `CONFIG_MODULES=y`, `CONFIG_UIO_PDRV_GENIRQ=m`, `CONFIG_CMA=y`, `/dev/uio0..1` present, `configfs` mounted |
+| Board toolchain | native `gcc` and `arm-linux-gnueabihf-gcc` present on the board; kernel tree at `/usr/src/kernel` (check for build-ready headers in Phase 5) |
+| PYNQ python | use `/usr/local/share/pynq-venv/bin/python` with `XILINX_XRT=/usr`, not from `/home/xilinx` |
+| sudo on board | needs the same password |
+| Device-tree compiler | `/usr/bin/dtc` on the host |
 
-## Known from the sibling project
+## Build commands
 
-`linux_projects/rv32-linux` already built a PYNQ-Z2 design with HP0 and HP1 ports and closed
-timing at 50 MHz (whole SoC 4.7k LUT, WNS +1.65 ns, critical path about 18.4 ns). Its
-`fpga/pynq_z2/build.tcl` is the starting reference for Phase 3.
+    make test                                  # all simulation tests
+    vivado -mode batch -source fpga/pynq_z2/build.tcl -tclargs until bit    # about 20 min
+    tools/board/run_bringup.sh 100             # copy to the board and run
 
-## To close Phase 0
+The board password is never stored in the repo. `run_bringup.sh` reads it through `SSH_ASKPASS`.
 
-Fill in the open rows. Items needed from you: where Vivado runs (machine, OS, version), PYNQ image
-version and `uname -r`, and how you reach the board.
+## Lessons carried over from rv32-linux
+
+- The PS HP ports power up in 64-bit mode and the bitstream cannot change that. Set
+  `AFI_RDCHAN_CTRL`/`AFI_WRCHAN_CTRL` bit 0 (FabricWidth) at `0xF8008000` + `0x00`/`0x14` for HP0.
+  `tools/board/bringup.py` does this.
+- Reserving DDR for the GPU: the top 64 MiB is already outside Linux's 448 MiB. Phase 4 can use
+  PYNQ `allocate` (CMA), which is simpler.

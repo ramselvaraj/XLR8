@@ -18,7 +18,7 @@
 // `ready` is high in W_FETCH/W_EXEC and also W_MEM, so a warp waiting on memory
 // can still be granted the shared bus. mem_unit sees `mem_ready && grant` so it
 // only advances on the cycle it actually owns the bus.
-module warp #(parameter int LANES = 4, parameter int PC_W = 16)(
+module warp #(parameter int LANES = 4, parameter int PC_W = 16, parameter bit FAST_DIV = 1'b1)(
     input  logic              clk,
     input  logic              reset,
     input  logic              start_warp,
@@ -38,7 +38,7 @@ module warp #(parameter int LANES = 4, parameter int PC_W = 16)(
     input  logic [15:0]       imem_rdata,
     output logic              halted
 );
-    typedef enum logic [2:0] {W_IDLE, W_FETCH, W_EXEC, W_MEM, W_HALT} state_t;
+    typedef enum logic [2:0] {W_IDLE, W_FETCH, W_EXEC, W_MEM, W_HALT, W_DIV} state_t;
     state_t      state, next_state;
     logic [PC_W-1:0] pc;
     logic [15:0]     ir;
@@ -88,9 +88,31 @@ module warp #(parameter int LANES = 4, parameter int PC_W = 16)(
 
     generate
         for (genvar l = 0; l < LANES; l++) begin : g_alu
-            alu u_alu(.a(rd1[l]), .b(rd2[l]), .op(alu_op), .result(alu_res[l]));
+            alu #(.HAS_DIV(FAST_DIV)) u_alu(.a(rd1[l]), .b(rd2[l]), .op(alu_op), .result(alu_res[l]));
         end
     endgenerate
+
+    // FAST_DIV=0: DIV runs on one sequential divider per lane (32 cycles). The warp leaves the
+    // scheduler (ready=0) in W_DIV so the other warp can use the bus meanwhile.
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic        div_start;                 // unused when FAST_DIV=1
+    logic [LANES-1:0] div_done_l;           // only lane 0 is observed; lanes finish together
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic        div_done;
+    logic [31:0] div_res [LANES];
+    assign div_start = !FAST_DIV && (state == W_EXEC) && grant && legal && is_div;
+    generate
+        for (genvar l = 0; l < LANES; l++) begin : g_div
+            if (!FAST_DIV) begin : g_seq
+                seq_div u_div(.clk(clk), .reset(reset), .start(div_start), .a(rd1[l]), .b(rd2[l]),
+                              .done(div_done_l[l]), .result(div_res[l]));
+            end else begin : g_none
+                assign div_done_l[l] = 1'b0;
+                assign div_res[l]    = 32'b0;
+            end
+        end
+    endgenerate
+    assign div_done = (state == W_DIV) && div_done_l[0];
 
     mem_unit #(.LANES(LANES)) u_mem(
         .clk(clk), .reset(reset),
@@ -142,7 +164,7 @@ module warp #(parameter int LANES = 4, parameter int PC_W = 16)(
     always_comb begin
         imem_addr = pc;
         halted    = (state == W_HALT);
-        ready     = (state == W_FETCH) || (state == W_EXEC) || (state == W_MEM);
+        ready     = (state == W_FETCH) || (state == W_EXEC) || (state == W_MEM);   // not W_DIV
         mem_start = (state == W_EXEC) && grant && legal && is_mem;
 
         w_en  = 1'b0;
@@ -153,10 +175,13 @@ module warp #(parameter int LANES = 4, parameter int PC_W = 16)(
             if (is_const) begin
                 w_en = 1'b1;
                 for (int l = 0; l < LANES; l++) wdata[l] = {24'b0, imm8};
-            end else if (is_alu) begin
+            end else if (is_alu && !(is_div && !FAST_DIV)) begin
                 w_en = 1'b1;
                 for (int l = 0; l < LANES; l++) wdata[l] = alu_res[l];
             end
+        end else if (state == W_DIV && div_done) begin
+            w_en = 1'b1;
+            for (int l = 0; l < LANES; l++) wdata[l] = div_res[l];
         end else if (state == W_MEM && mem_done && is_ldr) begin
             w_en = 1'b1;
             for (int l = 0; l < LANES; l++) wdata[l] = load_data[l];
@@ -172,9 +197,11 @@ module warp #(parameter int LANES = 4, parameter int PC_W = 16)(
                 W_EXEC:  if (grant) begin
                              if (is_ret)               next_state = W_HALT;
                              else if (legal && is_mem) next_state = W_MEM;
+                             else if (legal && is_div && !FAST_DIV) next_state = W_DIV;
                              else                      next_state = W_FETCH;
                          end
                 W_MEM:   if (mem_done)   next_state = W_FETCH;
+                W_DIV:   if (div_done)   next_state = W_FETCH;
                 W_HALT:                  next_state = W_HALT;
                 default:                 next_state = state;
             endcase
@@ -201,14 +228,14 @@ module warp #(parameter int LANES = 4, parameter int PC_W = 16)(
             if (start_warp)
                 pc <= '0;                       // new wave restarts at pc 0
             else if (state == W_EXEC && grant) begin
-                if (!is_ret && !is_mem) begin
+                if (!is_ret && !is_mem && !(is_div && !FAST_DIV && legal)) begin
                     if (is_br && br_taken)
                         pc <= pc + 1'b1 + {{(PC_W-9){ir[8]}}, ir[8:0]};
                     else
                         pc <= pc + 1'b1;
                 end
             end
-            else if (state == W_MEM && mem_done)
+            else if ((state == W_MEM && mem_done) || (state == W_DIV && div_done))
                 pc <= pc + 1'b1;
         end
     end

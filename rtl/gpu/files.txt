@@ -7,4 +7,5 @@ rtl/gpu/dcr.sv
 rtl/gpu/dispatcher.sv
 rtl/gpu/scheduler.sv
 rtl/gpu/mem_unit.sv
+rtl/gpu/seq_div.sv
 tb/system/tb_gpu.sv

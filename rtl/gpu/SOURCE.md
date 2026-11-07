@@ -14,7 +14,13 @@ The files in this directory, `tb/unit/`, `tb/system/tb_gpu.sv`, `tools/*.py`, `t
 
 - `rtl/gpu/files.txt` and the top-level `Makefile` use XLR8 paths (`rtl/gpu/`, `tb/system/`).
 - `tb/tb_gpu.sv` moved to `tb/system/tb_gpu.sv`.
-- RTL files themselves: no changes.
+- RTL changes (Phase 3, for FPGA timing):
+  - new `seq_div.sv`, a 32-cycle sequential unsigned divider.
+  - `alu.sv`: parameter `HAS_DIV` (default 1, unchanged behavior). With 0, DIV is not built.
+  - `warp.sv`: parameter `FAST_DIV` (default 1, unchanged behavior). With 0, DIV runs on `seq_div`
+    in a new `W_DIV` state (warp not requesting the bus while dividing).
+  - `simt_gpu.sv`: parameter `FAST_DIV` passed through. `xlr8_top` sets it to 0.
+  - `tb/system/tb_gpu.sv`: parameter `FAST_DIV` to test both.
 - `input_images/` was not copied. `tools/run_sim.py` falls back to its built-in test pattern.
 
 Record every later change to files here in this list.

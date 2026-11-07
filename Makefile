@@ -6,7 +6,7 @@ PY        := $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; els
 
 GPU_RTL := rtl/gpu/simt_gpu.sv rtl/gpu/warp.sv rtl/gpu/regfile.sv rtl/gpu/alu.sv \
            rtl/gpu/decoder.sv rtl/gpu/dcr.sv rtl/gpu/dispatcher.sv \
-           rtl/gpu/scheduler.sv rtl/gpu/mem_unit.sv
+           rtl/gpu/scheduler.sv rtl/gpu/mem_unit.sv rtl/gpu/seq_div.sv
 
 UNIT_TESTS := tb_alu tb_decoder tb_regfile tb_dcr tb_dispatcher tb_scheduler tb_branch
 
@@ -18,7 +18,9 @@ UNIT_SRC_tb_dispatcher := rtl/gpu/dispatcher.sv tb/unit/tb_dispatcher.sv
 UNIT_SRC_tb_scheduler  := rtl/gpu/scheduler.sv  tb/unit/tb_scheduler.sv
 UNIT_SRC_tb_branch     := $(GPU_RTL)            tb/unit/tb_branch.sv
 
-.PHONY: all venv build lint unit test-unit test-py test-ball test-gpu build-xlr8 prog test-xlr8 test-ball-axi test clean
+SEQ_OBJ := build/obj_seqdiv
+
+.PHONY: all venv build build-seqdiv test-div lint unit test-unit test-py test-ball test-gpu build-xlr8 prog test-xlr8 test-ball-axi test clean
 
 all: build
 
@@ -37,6 +39,14 @@ XLR8_TB  := tb/system/axi_mem_model.sv tb/system/tb_xlr8.sv
 XLR8_BIN := build/xlr8/Vtb_xlr8
 STALLS   ?= 0 25 60 90
 SEEDS    ?= 1 2
+
+# Same system testbench with the sequential divider (the divider the FPGA build uses).
+build-seqdiv:
+	mkdir -p $(SEQ_OBJ)
+	$(VERILATOR) --binary --timing --top-module tb_gpu -GFAST_DIV=0 -f rtl/gpu/files.txt --Mdir $(SEQ_OBJ)
+
+test-div: build build-seqdiv
+	$(PY) tools/tests/test_div.py
 
 lint:
 	$(VERILATOR) --lint-only -Wall --top-module simt_gpu $(GPU_RTL)
@@ -84,12 +94,15 @@ test-ball: build
 	$(PY) tools/tests/test_kernels.py
 
 # Existing RAPTOR GPU regression: unit tests, python tests, brighten, blur (interior + full frame).
-test-gpu: build test-unit test-py
+test-gpu: build build-seqdiv test-unit test-py
 	$(PY) tools/run_sim.py
 	$(PY) tools/run_sim.py --kernel sw/kernels/blur.asm
 	$(PY) tools/run_sim.py --full --width 16 --height 16
 	$(PY) tools/run_sim.py --full --width 32 --height 32
 	$(PY) tools/run_sim.py --full --width 64 --height 64
+	$(PY) tools/run_sim.py --kernel sw/kernels/blur.asm --binary $(SEQ_OBJ)/Vtb_gpu
+	$(PY) tools/run_sim.py --full --width 64 --height 64 --binary $(SEQ_OBJ)/Vtb_gpu
+	$(MAKE) test-div
 
 test: test-gpu test-ball test-xlr8 test-ball-axi
 

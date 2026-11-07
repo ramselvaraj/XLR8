@@ -25,6 +25,7 @@ module tb_gpu;
     parameter int ADDR_W     = 15;              // 32768 data words
     parameter int WORDS      = 1 << ADDR_W;
     parameter int PROG_WORDS = 1024;
+    parameter bit FAST_DIV   = 1;
     localparam int TB        = WARPS * LANES;   // physical threads per wave
 
     logic              clk = 1'b0;
@@ -54,7 +55,7 @@ module tb_gpu;
     int unsigned cycles;
     integer i;
 
-    simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W)) dut(
+    simt_gpu #(.WARPS(WARPS), .LANES(LANES), .PC_W(PC_W), .FAST_DIV(FAST_DIV)) dut(
         .clk(clk), .reset(reset), .start(start),
         .thread_count(thread_count), .src_addr(src_addr), .dst_addr(dst_addr),
         .busy(busy), .done(done),
