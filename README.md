@@ -19,7 +19,7 @@ Planning. Nothing here is built yet. See [docs/PLAN.md](docs/PLAN.md) and the ph
 | Phase | Title | State |
 |---|---|---|
 | 0 | Import, baseline, tooling | GPU imported, tests pass; toolchain items open |
-| 1 | Ball kernel and golden model in simulation | not started |
+| 1 | Ball kernel and golden model in simulation | done |
 | 2 | AXI wrapper (AXI4-Lite slave + AXI master bridge) | not started |
 | 3 | Vivado build for PYNQ-Z2 | not started |
 | 4 | Hardware bring-up from userspace (UIO / PYNQ MMIO) | not started |

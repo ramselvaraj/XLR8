@@ -18,7 +18,7 @@ UNIT_SRC_tb_dispatcher := rtl/gpu/dispatcher.sv tb/unit/tb_dispatcher.sv
 UNIT_SRC_tb_scheduler  := rtl/gpu/scheduler.sv  tb/unit/tb_scheduler.sv
 UNIT_SRC_tb_branch     := $(GPU_RTL)            tb/unit/tb_branch.sv
 
-.PHONY: all venv build lint unit test-unit test-py test-gpu test clean
+.PHONY: all venv build lint unit test-unit test-py test-ball test-gpu test clean
 
 all: build
 
@@ -48,6 +48,11 @@ test-py:
 	$(PY) tools/tests/test_blur_ref.py
 	$(PY) tools/tests/test_blur_border.py
 
+# Phase 1: ball kernel vs independent reference, ISA sim and RTL.
+test-ball: build
+	$(PY) tools/tests/test_ball.py
+	$(PY) tools/tests/test_kernels.py
+
 # Existing RAPTOR GPU regression: unit tests, python tests, brighten, blur (interior + full frame).
 test-gpu: build test-unit test-py
 	$(PY) tools/run_sim.py
@@ -56,7 +61,7 @@ test-gpu: build test-unit test-py
 	$(PY) tools/run_sim.py --full --width 32 --height 32
 	$(PY) tools/run_sim.py --full --width 64 --height 64
 
-test: test-gpu
+test: test-gpu test-ball
 
 clean:
 	rm -rf build
