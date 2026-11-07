@@ -22,7 +22,7 @@ Planning. Nothing here is built yet. See [docs/PLAN.md](docs/PLAN.md) and the ph
 | 1 | Ball kernel and golden model in simulation | done |
 | 2 | AXI wrapper (AXI4-Lite slave + AXI master bridge) | done |
 | 3 | Vivado build for PYNQ-Z2 | done (50 MHz, WNS +0.971 ns) |
-| 4 | Hardware bring-up from userspace (UIO / PYNQ MMIO) | not started |
+| 4 | Hardware bring-up from userspace (UIO / PYNQ MMIO) | 1,000 frames exact on board; SLVERR_EN=0 re-test pending |
 | 5 | Linux kernel driver | not started |
 | 6 | Userspace library, renderer, animation | not started |
 | 7 | Benchmarks against the ARM cores | not started |
