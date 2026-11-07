@@ -1,0 +1,17 @@
+build/
+obj_dir/
+*.vcd
+*.fst
+*.o
+*.ko
+*.mod*
+*.symvers
+modules.order
+__pycache__/
+.Xil/
+*.jou
+*.log
+vivado_work/
+*.bit
+*.hwh
+*.xsa
