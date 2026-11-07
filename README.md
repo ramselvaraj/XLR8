@@ -32,7 +32,7 @@ against a CPU render.*
 | 4 | Hardware bring-up from userspace (UIO / PYNQ MMIO) | done (1,000 frames exact on board) |
 | 5 | Linux kernel driver | done (/dev/xlr8, 1,000 frames exact over interrupts) |
 | 6 | Userspace library, renderer, animation | done (one command from cold boot to a verified GIF) |
-| 7 | Benchmarks against the ARM cores | not started |
+| 7 | Benchmarks against the ARM cores | done (GPU 16x to 218x slower than the A9; see results/benchmarks.md) |
 | 8 | Optimization and scale-out | not started |
 | 9 | Screen output, V4L2, dma-buf, RISC-V host, formal/UVM (all committed scope) | not started |
 | 10 | Polish, demo, write-up | not started |
@@ -52,6 +52,7 @@ against a CPU render.*
 | Resources | 31.0k LUT (58%), 24 DSP, 0 BRAM |
 | Ball frame, 64x64 | 462,000 cycles = 9.25 ms at 50 MHz, 24,576 bus transactions |
 | Bridge into ideal memory (sim) | 192,001 cycles; real DDR adds about 10 cycles per transaction |
+| vs ARM (ball 64x64) | GPU 9.4 ms; ARM scalar 0.051 ms, NEON 0.043 ms, NumPy 0.52 ms. GPU uses 1% of a core while running. |
 | Driver | 1,000 frames exact over interrupts, 4 concurrent processes, SIGKILL mid-job, watchdog, 10,000 open/close without a leak |
 
 ## Layout
