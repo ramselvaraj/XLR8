@@ -1,0 +1,10 @@
+rtl/gpu/simt_gpu.sv
+rtl/gpu/warp.sv
+rtl/gpu/regfile.sv
+rtl/gpu/alu.sv
+rtl/gpu/decoder.sv
+rtl/gpu/dcr.sv
+rtl/gpu/dispatcher.sv
+rtl/gpu/scheduler.sv
+rtl/gpu/mem_unit.sv
+tb/system/tb_gpu.sv

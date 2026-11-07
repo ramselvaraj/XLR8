@@ -1,0 +1,5 @@
+# Optional Python deps. The tools fall back to stdlib (PPM output, built-in
+# test pattern) when these are unavailable, but PNG I/O needs Pillow and the
+# blur reference model in later phases needs numpy.
+pillow
+numpy
