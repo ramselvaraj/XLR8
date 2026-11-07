@@ -86,8 +86,8 @@ over RAPTOR-SoC, where CPU and GPU were separate domains.
 
 | Offset | Name | R/W | Description |
 |---|---|---|---|
-| 0x00 | CTRL | RW | bit0 START (self-clearing), bit1 SOFT_RESET, bit2 IRQ_EN |
-| 0x04 | STATUS | R | bit0 BUSY, bit1 DONE (sticky until next START), bit2 ERROR |
+| 0x00 | CTRL | RW | bit0 START (self-clearing), bit1 SOFT_RESET, bit2 IRQ_EN (level, set by every CTRL write: write `START\|IRQ_EN` together) |
+| 0x04 | STATUS | R | bit0 BUSY, bit1 DONE (sticky until next START), bit2 ERROR, bit3 BAD_ACCESS (sticky until next START or SOFT_RESET) |
 | 0x08 | THREADS | RW | thread count |
 | 0x0C | SRC | RW | GPU word offset for `r14` |
 | 0x10 | DST | RW | GPU word offset for `r15` |
@@ -103,10 +103,18 @@ over RAPTOR-SoC, where CPU and GPU were separate domains.
 | 0x38 | VERSION | R | major.minor.patch, one byte each |
 | 0x3C | ARG0 | RW | reserved for Phase 8 kernel arguments |
 | 0x40 | ARG1 | RW | reserved for Phase 8 kernel arguments |
-| 0x1000-0x1FFF | PROG_WIN | W | program RAM, two 16-bit instructions per 32-bit word |
+| 0x1000-0x17FF | PROG_WIN | RW | program RAM, two 16-bit instructions per 32-bit word, 512 words |
 
 Rules:
-- START while BUSY returns SLVERR and does not disturb the running job.
+- START while BUSY returns SLVERR and does not disturb the running job. Writes to read-only or
+  reserved registers and any unmapped address also return SLVERR and set STATUS.BAD_ACCESS.
+  `SLVERR_EN=0` returns OKAY instead and keeps BAD_ACCESS. VERIFY on the board: an AXI error on the
+  Zynq GP port can raise an external abort in Linux, in which case build with `SLVERR_EN=0`.
+- SOFT_RESET resets the GPU, program fetch state and counters for 8 cycles but keeps the
+  configuration registers. The bridge finishes any AXI transaction already in flight and discards
+  its result, and START is refused (BUSY) until that drain is complete.
+- An all-zero program memory runs NOPs forever (no RET), so a job never ends. The driver watchdog
+  recovers it with SOFT_RESET (tested).
 - Configuration registers are shadowed. A write during BUSY updates the shadow only, and START
   snapshots all of them. This is the same safety rule RAPTOR uses.
 - DONE rises one cycle after the GPU's final STR is acknowledged by the bridge.

@@ -1,0 +1,5 @@
+rtl/axi/xlr8_prog_ram.sv
+rtl/axi/xlr8_perf.sv
+rtl/axi/xlr8_axi_bridge.sv
+rtl/axi/xlr8_regs.sv
+rtl/top/xlr8_top.sv

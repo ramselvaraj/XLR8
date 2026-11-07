@@ -20,7 +20,7 @@ Planning. Nothing here is built yet. See [docs/PLAN.md](docs/PLAN.md) and the ph
 |---|---|---|
 | 0 | Import, baseline, tooling | GPU imported, tests pass; toolchain items open |
 | 1 | Ball kernel and golden model in simulation | done |
-| 2 | AXI wrapper (AXI4-Lite slave + AXI master bridge) | not started |
+| 2 | AXI wrapper (AXI4-Lite slave + AXI master bridge) | done |
 | 3 | Vivado build for PYNQ-Z2 | not started |
 | 4 | Hardware bring-up from userspace (UIO / PYNQ MMIO) | not started |
 | 5 | Linux kernel driver | not started |
