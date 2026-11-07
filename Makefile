@@ -20,7 +20,8 @@ UNIT_SRC_tb_branch     := $(GPU_RTL)            tb/unit/tb_branch.sv
 
 SEQ_OBJ := build/obj_seqdiv
 
-.PHONY: all venv build build-seqdiv test-div lint unit test-unit test-py test-ball test-gpu build-xlr8 prog test-xlr8 test-ball-axi test clean
+PHONY_EXTRA := test-sw
+.PHONY: test-sw all venv build build-seqdiv test-div lint unit test-unit test-py test-ball test-gpu build-xlr8 prog test-xlr8 test-ball-axi test clean
 
 all: build
 
@@ -104,7 +105,13 @@ test-gpu: build build-seqdiv test-unit test-py
 	$(PY) tools/run_sim.py --full --width 64 --height 64 --binary $(SEQ_OBJ)/Vtb_gpu
 	$(MAKE) test-div
 
-test: test-gpu test-ball test-xlr8 test-ball-axi
+# Phase 6: userspace library (fake driver, ASan/UBSan), image writers, Python binding
+test-sw:
+	$(MAKE) -C sw test
+	$(PY) tools/tests/test_img_decode.py sw/build/img_out
+	$(PY) tools/tests/test_py_binding.py
+
+test: test-gpu test-ball test-xlr8 test-ball-axi test-sw
 
 clean:
 	rm -rf build

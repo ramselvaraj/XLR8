@@ -29,6 +29,9 @@
 				reg = <0x40010000 0x2000>;
 				interrupt-parent = <&intc>;
 				interrupts = <0 30 4>;      /* IRQ_F2P[1] = SPI 30, level high */
+				clocks = <&clkc 15>;        /* FCLK_CLK0, the PL clock */
+				clock-names = "pl_clk";
+				clock-frequency = <50000000>;   /* the design is timed at 50 MHz */
 			};
 		};
 	};

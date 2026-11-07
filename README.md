@@ -14,7 +14,14 @@ No HDMI. Output is a framebuffer in DDR that userspace saves as PNG/GIF and view
 
 ## Status
 
-Planning. Nothing here is built yet. See [docs/PLAN.md](docs/PLAN.md) and the phase documents.
+Phases 0 to 6 are done and verified: simulation, FPGA build (timing met at 50 MHz), hardware
+bring-up, a Linux driver, and a userspace renderer. See [docs/PLAN.md](docs/PLAN.md) and the phase
+documents; every number below is backed by a file in `results/`.
+
+![ball rendered on the GPU](results/demo/ball.gif)
+
+*120 frames rendered by the GPU in the FPGA, through `/dev/xlr8`, each checked pixel for pixel
+against a CPU render.*
 
 | Phase | Title | State |
 |---|---|---|
@@ -24,11 +31,28 @@ Planning. Nothing here is built yet. See [docs/PLAN.md](docs/PLAN.md) and the ph
 | 3 | Vivado build for PYNQ-Z2 | done (50 MHz, WNS +0.971 ns) |
 | 4 | Hardware bring-up from userspace (UIO / PYNQ MMIO) | done (1,000 frames exact on board) |
 | 5 | Linux kernel driver | done (/dev/xlr8, 1,000 frames exact over interrupts) |
-| 6 | Userspace library, renderer, animation | not started |
+| 6 | Userspace library, renderer, animation | done (one command from cold boot to a verified GIF) |
 | 7 | Benchmarks against the ARM cores | not started |
 | 8 | Optimization and scale-out | not started |
 | 9 | Screen output, V4L2, dma-buf, RISC-V host, formal/UVM (all committed scope) | not started |
 | 10 | Polish, demo, write-up | not started |
+
+## Quick start
+
+    make test                       # all simulation and host tests (needs verilator, python venv)
+    make venv                       # once, for numpy and Pillow
+    tools/board/demo.sh 120         # board: build, load, render, verify, fetch results/demo/*.gif
+                                    # (SSH_ASKPASS must print the board password)
+
+## Measured so far
+
+| | |
+|---|---|
+| Timing, PYNQ-Z2 | met at 50 MHz, WNS +0.644 ns, WHS +0.092 ns (`results/timing_summary_50mhz.md`) |
+| Resources | 31.0k LUT (58%), 24 DSP, 0 BRAM |
+| Ball frame, 64x64 | 462,000 cycles = 9.25 ms at 50 MHz, 24,576 bus transactions |
+| Bridge into ideal memory (sim) | 192,001 cycles; real DDR adds about 10 cycles per transaction |
+| Driver | 1,000 frames exact over interrupts, 4 concurrent processes, SIGKILL mid-job, watchdog, 10,000 open/close without a leak |
 
 ## Layout
 

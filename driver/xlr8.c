@@ -7,6 +7,7 @@
  * SUBMIT/LOAD_PROG calls sleep until it is free. Completion is interrupt driven. A watchdog
  * soft-resets a GPU that never finishes.
  */
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/fs.h>
@@ -73,6 +74,7 @@ struct xlr8_ctx {
 struct xlr8_dev {
 	struct device *dev;
 	void __iomem *regs;
+	struct clk *clk;
 	int irq;
 	struct miscdevice misc;
 
@@ -483,10 +485,15 @@ static void force_hp0_32bit(struct xlr8_dev *d)
 	iounmap(afi);
 }
 
+static void xlr8_clk_off(void *clk)
+{
+	clk_disable_unprepare(clk);
+}
+
 static int xlr8_probe(struct platform_device *pdev)
 {
 	struct xlr8_dev *d;
-	u32 id;
+	u32 id, hz;
 	int ret;
 
 	d = devm_kzalloc(&pdev->dev, sizeof(*d), GFP_KERNEL);
@@ -506,6 +513,26 @@ static int xlr8_probe(struct platform_device *pdev)
 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (ret)
 		return ret;
+
+	/*
+	 * The design is timed at 50 MHz. The PL clock comes up at a different rate when the bitstream
+	 * is loaded through the FPGA manager (100 MHz on this image), so set it from the device tree.
+	 */
+	d->clk = devm_clk_get(&pdev->dev, "pl_clk");
+	if (IS_ERR(d->clk))
+		return dev_err_probe(&pdev->dev, PTR_ERR(d->clk), "no pl_clk in the device tree\n");
+	if (!of_property_read_u32(pdev->dev.of_node, "clock-frequency", &hz)) {
+		ret = clk_set_rate(d->clk, hz);
+		if (ret)
+			return dev_err_probe(&pdev->dev, ret, "cannot set the PL clock to %u Hz\n", hz);
+	}
+	ret = clk_prepare_enable(d->clk);
+	if (ret)
+		return ret;
+	ret = devm_add_action_or_reset(&pdev->dev, xlr8_clk_off, d->clk);
+	if (ret)
+		return ret;
+	dev_info(&pdev->dev, "PL clock %lu Hz\n", clk_get_rate(d->clk));
 
 	force_hp0_32bit(d);
 	id = rd(d, R_ID);

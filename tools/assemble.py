@@ -353,6 +353,7 @@ def main():
     ap.add_argument("source")
     ap.add_argument("--out", default="prog.hex")
     ap.add_argument("--meta", default=None)
+    ap.add_argument("--bin", default=None, help="also write the program as raw little-endian 16-bit words")
     args = ap.parse_args()
 
     with open(args.source) as f:
@@ -366,6 +367,10 @@ def main():
     with open(args.out, "w") as f:
         for w in prog:
             f.write(f"{w & 0xFFFF:04x}\n")
+    if args.bin:
+        with open(args.bin, "wb") as f:
+            for w in prog:
+                f.write((w & 0xFFFF).to_bytes(2, "little"))
     if args.meta:
         with open(args.meta, "w") as f:
             json.dump(meta, f, indent=2)
