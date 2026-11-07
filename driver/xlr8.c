@@ -361,6 +361,7 @@ static long do_submit(struct xlr8_ctx *c, void __user *arg)
 	struct xlr8_submit s;
 	unsigned long fl;
 	long ret;
+	int k;
 
 	if (copy_from_user(&s, arg, sizeof(s)))
 		return -EFAULT;
@@ -389,7 +390,7 @@ static long do_submit(struct xlr8_ctx *c, void __user *arg)
 	wr(d, R_DST, s.dst);
 	wr(d, R_PROG, s.prog_base);
 	if (d->hw_version >= 0x200)
-		for (int k = 0; k < XLR8_NARGS; k++)
+		for (k = 0; k < XLR8_NARGS; k++)
 			wr(d, R_ARG0 + 4 * k, s.args[k]);
 	wr(d, R_MBASE, lower_32_bits(c->dma));
 	wr(d, R_MLIM, c->size);

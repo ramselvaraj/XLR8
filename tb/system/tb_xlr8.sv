@@ -3,7 +3,7 @@
 // random stalls, and the Phase 2 test list.
 //
 // Plusargs:
-//   +test=<name|all>   regs prog job busy oor axierr b2b reset irq   (default all)
+//   +test=<name|all>   regs prog job busy raw oor axierr b2b reset irq   (default all)
 //   +stall=<pct>       handshake stall percentage on every AXI channel (default 0)
 //   +prog=<hex>        brighten program hex (default build/prog/brighten.hex)
 //   Ball mode (replaces the tests):
@@ -98,12 +98,22 @@ module tb_xlr8;
     bit          start_seen = 0;
     always_ff @(posedge clk) begin
         if (dut.gpu_start) begin start_cyc <= cyc; start_seen <= 1; end
-        if (dut.gpu_done)  done_cyc <= cyc;
+        if (dut.job_complete) done_cyc <= cyc;     // DONE set: GPU finished and posted writes drained
     end
 
     // irq must never be high before STATUS.DONE is observable: track the first irq rise vs done flag
     int irq_early = 0;
     always_ff @(posedge clk) if (irq && !dut.u_regs.done_f && !dut.u_regs.error_f) irq_early <= irq_early + 1;
+
+    // DONE (and so the interrupt) must not rise while a write is still outstanding in memory:
+    // an interrupt-driven driver reads the results the moment it fires.
+    int done_early = 0;
+    logic done_f_q = 1'b0;
+    always_ff @(posedge clk) begin
+        done_f_q <= dut.u_regs.done_f;
+        if (dut.u_regs.done_f && !done_f_q && (u_mem.wr_out != 0 || u_mem.bvalid || u_mem.awq.size() != 0))
+            done_early <= done_early + 1;
+    end
 
     // GPU bus protocol: request held stable until ready
     logic        p_req, p_we; logic [31:0] p_addr, p_wdata;
@@ -440,6 +450,28 @@ module tb_xlr8;
         check_brighten(SRC, DST, 256, "second job");
     endtask
 
+    task automatic t_raw();
+        string rawp;
+        int bad = 0;
+        $display("test raw (read-after-write through posted stores)");
+        if (!$value$plusargs("rawprog=%s", rawp)) rawp = "build/prog/raw.hex";
+        read_prog(rawp);
+        for (int w = 0; w < 512; w++) wr(A_WIN + 13'(w * 4), 32'h0);
+        load_prog();
+        for (int round = 0; round < 3; round++) begin
+            for (int i = 0; i < 1024; i++) u_mem.mem[DST + i] = 32'hFFFF_FFFF;
+            configure(256, SRC, DST);
+            launch_and_wait();
+            for (int t = 0; t < 256; t++) begin
+                if (u_mem.mem[DST + t]       !== 32'(t + 1)) bad++;
+                if (u_mem.mem[DST + 256 + t] !== 32'(t + 2)) bad++;
+                if (u_mem.mem[DST + 512 + t] !== 32'(t + 3)) bad++;
+            end
+        end
+        if (bad != 0) fail($sformatf("raw: %0d wrong words (a load passed an earlier posted store)", bad));
+        read_prog(prog_path);
+    endtask
+
     task automatic t_oor();
         logic [31:0] v, st;
         int unsigned ar0, aw0;
@@ -700,6 +732,7 @@ module tb_xlr8;
             if (tname == "all" || tname == "prog")   begin do_reset(); t_prog();   end
             if (tname == "all" || tname == "job")    begin do_reset(); t_job();    end
             if (tname == "all" || tname == "busy")   begin do_reset(); t_busy();   end
+            if (tname == "all" || tname == "raw")    begin do_reset(); t_raw();    end
             if (tname == "all" || tname == "oor")    begin do_reset(); t_oor();    end
             if (tname == "all" || tname == "axierr") begin do_reset(); t_axierr(); end
             if (tname == "all" || tname == "b2b")    begin do_reset(); t_b2b();    end
@@ -707,6 +740,7 @@ module tb_xlr8;
             if (tname == "all" || tname == "irq")    begin do_reset(); t_irq();    end
         end
 
+        if (done_early != 0) fail($sformatf("DONE rose %0d times with writes still outstanding", done_early));
         if (n_perr != 0)  fail($sformatf("%0d AXI protocol errors", n_perr));
         if (bus_viol != 0) fail($sformatf("%0d GPU bus protocol violations (request not held)", bus_viol));
         if (errors == 0) $display("tb_xlr8: PASS");

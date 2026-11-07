@@ -1,5 +1,13 @@
 `timescale 1ns/1ps
-// xlr8_axi_bridge.sv -- GPU word bus to an AXI3 master (single beat, one outstanding).
+// xlr8_axi_bridge.sv -- GPU word bus to an AXI3 master (single beat).
+//
+// Reads are one at a time. Stores are POSTED: the GPU's store completes as soon as the AXI write
+// address and data are accepted, without waiting for the write response, and up to MAX_WR writes
+// can be outstanding. Ordering rules that keep this correct:
+//   - a read is not issued until every earlier write has its response (read-after-write);
+//   - `idle` stays low until all write responses are back, and the register block holds DONE
+//     until then, so a finished job's data is in memory;
+//   - a write error response is reported (ERR_ADDR from a small address FIFO) before DONE.
 //
 // GPU side follows docs/BUS_PROTOCOL.md: the request is held until `mem_ready`, which pulses for
 // one cycle when the transaction has completed, with `mem_rdata` valid in that cycle.
@@ -13,7 +21,9 @@
 // withdraw a request) but its result is discarded and no `mem_ready` is produced. `idle` is low
 // until that drain completes.
 module xlr8_axi_bridge #(
-    parameter int ID_W = 6
+    parameter int ID_W   = 6,
+    parameter int MAX_WR = 8,
+    parameter bit POSTED = 1'b1       // 0: wait for each write response (the Phase 2 behaviour)
 )(
     input  logic        clk,
     input  logic        rst,
@@ -72,7 +82,7 @@ module xlr8_axi_bridge #(
     input  logic        m_axi_rvalid,
     output logic        m_axi_rready
 );
-    typedef enum logic [2:0] {S_IDLE, S_RD, S_RDWAIT, S_WR, S_BWAIT, S_RESP} state_t;
+    typedef enum logic [2:0] {S_IDLE, S_RD, S_RDWAIT, S_WR, S_BWAIT, S_RESP} state_t;   // S_BWAIT only when !POSTED
     state_t state;
 
     logic [31:0] axi_addr_q, wdata_q, rdata_q;
@@ -85,7 +95,16 @@ module xlr8_axi_bridge #(
     assign end_byte = {mem_addr, 2'b00} + 34'd4;
     assign legal    = (end_byte <= {2'b00, limit});
 
-    assign idle = (state == S_IDLE);
+    // outstanding posted writes and their word addresses, in issue order (AXI returns same-ID responses in order)
+    localparam int CW = $clog2(MAX_WR + 1);
+    logic [CW-1:0]  out_cnt;
+    logic [31:0]    wr_fifo [MAX_WR];
+    logic [$clog2(MAX_WR)-1:0] wr_head, wr_tail;
+    logic           push_wr, pop_wr;
+    logic [31:0]    cur_word;
+    logic [31:0]    addr_word_q;     // GPU word address of the access being issued
+
+    assign idle = (state == S_IDLE) && (out_cnt == '0);
 
     // GPU side
     assign mem_ready = (state == S_RESP) && !abort_q;
@@ -120,7 +139,28 @@ module xlr8_axi_bridge #(
     assign m_axi_awvalid = (state == S_WR) && !aw_done;
     assign m_axi_wvalid  = (state == S_WR) && !w_done;
     assign m_axi_rready  = (state == S_RDWAIT);
-    assign m_axi_bready  = (state == S_BWAIT);
+    assign m_axi_bready  = POSTED ? (out_cnt != '0) : (state == S_BWAIT);
+
+    // a write is pushed when both its address and data have been accepted
+    wire aw_hs = m_axi_awvalid && m_axi_awready;
+    wire w_hs  = m_axi_wvalid  && m_axi_wready;
+    assign push_wr = POSTED && (state == S_WR) && (aw_done || aw_hs) && (w_done || w_hs);
+    assign pop_wr  = POSTED && m_axi_bvalid && m_axi_bready;
+    assign cur_word = wr_fifo[wr_head];
+
+    // outstanding-write bookkeeping and write-response errors
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            out_cnt <= '0; wr_head <= '0; wr_tail <= '0;
+        end else begin
+            out_cnt <= out_cnt + CW'(push_wr) - CW'(pop_wr);
+            if (push_wr) begin wr_fifo[wr_tail] <= addr_word_q; wr_tail <= wr_tail + 1'b1; end
+            if (pop_wr) wr_head <= wr_head + 1'b1;
+        end
+    end
+
+    logic        wr_err_pulse;
+    assign wr_err_pulse = pop_wr && (m_axi_bresp != 2'b00);
 
     always_ff @(posedge clk) begin
         err_valid <= 1'b0;
@@ -133,8 +173,13 @@ module xlr8_axi_bridge #(
             wdata_q    <= 32'b0;
             rdata_q    <= 32'b0;
             err_addr   <= 32'b0;
+            addr_word_q <= 32'b0;
         end else begin
             if (abort && state != S_IDLE) abort_q <= 1'b1;
+            if (wr_err_pulse) begin             // a posted write failed: report its own address
+                err_valid <= 1'b1;
+                err_addr  <= cur_word;
+            end
 
             case (state)
                 S_IDLE: begin
@@ -142,16 +187,24 @@ module xlr8_axi_bridge #(
                     aw_done <= 1'b0;
                     w_done  <= 1'b0;
                     if (mem_req && !abort) begin
-                        wdata_q <= mem_wdata;
                         if (!legal) begin
+                            wdata_q   <= mem_wdata;
                             rdata_q   <= 32'b0;
                             err_valid <= 1'b1;
                             err_addr  <= mem_addr;
                             state     <= S_RESP;
-                        end else begin
-                            axi_addr_q <= base + {mem_addr[29:0], 2'b00};
-                            err_addr   <= mem_addr;     // remembered in case the response errors
-                            state      <= mem_we ? S_WR : S_RD;
+                        end else if (mem_we) begin
+                            if (out_cnt < MAX_WR[CW-1:0] || !POSTED) begin   // room for another posted write
+                                wdata_q     <= mem_wdata;
+                                axi_addr_q  <= base + {mem_addr[29:0], 2'b00};
+                                addr_word_q <= mem_addr;
+                                state       <= S_WR;
+                            end
+                        end else if (out_cnt == '0) begin                    // a read waits for earlier writes
+                            axi_addr_q  <= base + {mem_addr[29:0], 2'b00};
+                            addr_word_q <= mem_addr;
+                            err_addr    <= mem_addr;                         // in case the read response errors
+                            state       <= S_RD;
                         end
                     end
                 end
@@ -165,15 +218,14 @@ module xlr8_axi_bridge #(
                 end
 
                 S_WR: begin
-                    if (m_axi_awvalid && m_axi_awready) aw_done <= 1'b1;
-                    if (m_axi_wvalid  && m_axi_wready)  w_done  <= 1'b1;
-                    if ((aw_done || (m_axi_awvalid && m_axi_awready)) &&
-                        (w_done  || (m_axi_wvalid  && m_axi_wready)))
-                        state <= S_BWAIT;
+                    if (aw_hs) aw_done <= 1'b1;
+                    if (w_hs)  w_done  <= 1'b1;
+                    if ((aw_done || aw_hs) && (w_done || w_hs))
+                        state <= POSTED ? ((abort_q || abort) ? S_IDLE : S_RESP) : S_BWAIT;
                 end
 
-                S_BWAIT: if (m_axi_bvalid) begin
-                    if (m_axi_bresp != 2'b00) err_valid <= 1'b1;
+                S_BWAIT: if (m_axi_bvalid) begin                             // only when !POSTED
+                    if (m_axi_bresp != 2'b00) begin err_valid <= 1'b1; err_addr <= addr_word_q; end
                     state <= (abort_q || abort) ? S_IDLE : S_RESP;
                 end
 

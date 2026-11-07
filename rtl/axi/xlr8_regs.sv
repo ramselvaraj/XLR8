@@ -67,6 +67,7 @@ module xlr8_regs #(
     input  logic [31:0] perf_stalls,
 
     // resets and interrupt
+    output logic        job_complete,   // one cycle: DONE has just been set (GPU finished and writes drained)
     output logic        soft_active,    // high while a soft reset is being applied
     output logic        irq
 );
@@ -91,6 +92,7 @@ module xlr8_regs #(
     logic [31:0] err_addr_q;
     logic [3:0]  soft_cnt;
     logic        start_pulse_q;
+    logic        done_pending;       // GPU has finished; waiting for posted writes to reach memory
 
     assign soft_active = (soft_cnt != 4'd0);
     wire   busy        = job_active || !bridge_idle || soft_active || start_pulse_q;
@@ -168,6 +170,7 @@ module xlr8_regs #(
             prog_base <= '0;
             job_active <= 1'b0; done_f <= 1'b0; error_f <= 1'b0; bad_f <= 1'b0;
             irq_status <= 2'b00; err_addr_q <= '0; soft_cnt <= 4'd0; start_pulse_q <= 1'b0;
+            done_pending <= 1'b0; job_complete <= 1'b0;
         end else begin
             start_pulse_q <= 1'b0;
             if (soft_cnt != 4'd0) soft_cnt <= soft_cnt - 4'd1;
@@ -178,10 +181,14 @@ module xlr8_regs #(
             if (s_axi_bvalid && s_axi_bready) s_axi_bvalid <= 1'b0;
 
             // job events (GPU)
-            if (gpu_done && job_active) begin
-                job_active <= 1'b0;
-                done_f     <= 1'b1;
+            job_complete <= 1'b0;
+            if (gpu_done && job_active) done_pending <= 1'b1;
+            if (done_pending && bridge_idle) begin      // all write responses are back
+                done_pending  <= 1'b0;
+                job_active    <= 1'b0;
+                done_f        <= 1'b1;
                 irq_status[0] <= 1'b1;
+                job_complete  <= 1'b1;
             end
             if (err_valid && job_active) begin
                 if (!error_f) err_addr_q <= err_addr_in;
@@ -191,7 +198,7 @@ module xlr8_regs #(
 
             // soft reset clears job state (a hard reset clears everything)
             if (soft_active) begin
-                job_active <= 1'b0; done_f <= 1'b0; error_f <= 1'b0;
+                job_active <= 1'b0; done_f <= 1'b0; error_f <= 1'b0; done_pending <= 1'b0;
                 irq_status <= 2'b00; start_pulse_q <= 1'b0;
             end
 
@@ -228,7 +235,7 @@ module xlr8_regs #(
                 gpu_threads <= sh_threads; gpu_src <= sh_src; gpu_dst <= sh_dst;
                 mem_base <= sh_mbase; mem_limit <= sh_mlim; prog_base <= sh_prog;
                 for (int k = 0; k < NARGS; k++) args[k] <= sh_args[k];
-                job_active <= 1'b1;
+                job_active <= 1'b1; done_pending <= 1'b0;
                 done_f <= 1'b0; error_f <= 1'b0; bad_f <= 1'b0;
                 err_addr_q <= '0;
                 irq_status <= 2'b00;

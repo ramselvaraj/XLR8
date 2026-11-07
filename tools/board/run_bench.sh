@@ -6,6 +6,9 @@ cd "$(dirname "$0")/../.."
 . tools/board/common.sh
 find_board
 FRAMES=${1:-1000}
+MAIN_WORKLOADS=${MAIN_WORKLOADS-ball64 ball128 ball256 gradient64 blur64}   # set to empty to skip the main matrix
+ARGS_WORKLOADS=${ARGS_WORKLOADS-ball64a ball128a ball256a}
+BENCH_OUT=${BENCH_OUT:-results/bench}
 echo "board: $BOARD"
 .venv/bin/python tools/board/mk_bench_progs.py
 bssh 'rm -rf ~/xlr8/bench && mkdir -p ~/xlr8/bench/prog ~/xlr8/bench/src ~/xlr8/bench/out'
@@ -25,7 +28,7 @@ bsudo 'cd /home/xilinx/xlr8/bench; chmod 666 /dev/xlr8
 run() {  # impl workload frames
   bsudo "cd /home/xilinx/xlr8/bench && taskset -c 1 ./bench --impl $1 --workload $2 --frames $3 --prog prog/$2.hex > out/$1_$2.csv 2> out/$1_$2.log; tail -1 out/$1_$2.csv; cat out/$1_$2.log | tail -1"
 }
-for w in ball64 ball128 ball256 gradient64 blur64; do
+for w in $MAIN_WORKLOADS; do
   nf=$FRAMES; case $w in ball128|ball256) nf=$(( FRAMES < 300 ? FRAMES : 300 ));; esac
   echo "== $w"
   run scalar $w $FRAMES
@@ -33,11 +36,11 @@ for w in ball64 ball128 ball256 gradient64 blur64; do
   run xlr8   $w $nf
   bsudo "cd /home/xilinx/xlr8/bench && taskset -c 1 /usr/local/share/pynq-venv/bin/python src/bench_numpy.py $w $FRAMES 100 > out/numpy_$w.csv; tail -1 out/numpy_$w.csv"
 done
-for w in ball64a ball128a ball256a; do
+for w in $ARGS_WORKLOADS; do
   nf=$FRAMES; case $w in ball128a|ball256a) nf=$(( FRAMES < 300 ? FRAMES : 300 ));; esac
   echo "== $w (kernel arguments)"
   run xlr8 $w $nf
 done
-mkdir -p results/bench
-bscp "$BOARD:xlr8/bench/out/*" results/bench/
-ls -la results/bench | head -30
+mkdir -p "$BENCH_OUT"
+bscp "$BOARD:xlr8/bench/out/*" "$BENCH_OUT/"
+ls "$BENCH_OUT" | wc -l

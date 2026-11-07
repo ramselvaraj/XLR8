@@ -114,7 +114,7 @@ module xlr8_top #(
     logic [8:0]  pw_waddr, pw_raddr;
     logic [31:0] pw_wdata, pw_rdata;
     logic [3:0]  pw_wstrb;
-    logic        perf_clear;
+    logic        perf_clear, job_complete;
     logic [31:0] perf_cycles, perf_xacts, perf_stalls;
 
     xlr8_regs #(.SLVERR_EN(SLVERR_EN), .NARGS(NARGS)) u_regs (
@@ -134,7 +134,7 @@ module xlr8_top #(
         .pw_raddr(pw_raddr), .pw_rdata(pw_rdata),
         .perf_clear(perf_clear), .perf_cycles(perf_cycles), .perf_xacts(perf_xacts),
         .perf_stalls(perf_stalls),
-        .soft_active(soft_active), .irq(irq)
+        .job_complete(job_complete), .soft_active(soft_active), .irq(irq)
     );
 
     // program RAM; the GPU fetch address is offset by PROG_BASE (instruction index)
@@ -171,7 +171,7 @@ module xlr8_top #(
     );
 
     xlr8_perf u_perf (
-        .clk(aclk), .rst(hard_rst), .clear(perf_clear), .start(gpu_start), .done(gpu_done),
+        .clk(aclk), .rst(hard_rst), .clear(perf_clear), .start(gpu_start), .done(job_complete),
         .mem_req(mem_req), .mem_ready(mem_ready),
         .cycles(perf_cycles), .xacts(perf_xacts), .stalls(perf_stalls)
     );

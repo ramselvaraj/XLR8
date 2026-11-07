@@ -62,6 +62,7 @@ lint:
 prog:
 	mkdir -p build/prog
 	$(PY) tools/assemble.py sw/kernels/brighten.asm --out build/prog/brighten.hex --meta build/prog/brighten.json
+	$(PY) tools/assemble.py sw/kernels/raw.asm --out build/prog/raw.hex --meta build/prog/raw.json
 
 build-xlr8: $(XLR8_BIN)
 

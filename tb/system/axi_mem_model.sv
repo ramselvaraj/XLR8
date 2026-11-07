@@ -5,11 +5,16 @@
 // error response for one word, and protocol checking of the master:
 //   - len == 0, size == 2, address aligned and inside the model
 //   - valid/payload stable until ready
-//   - only one outstanding read and one outstanding write
+//   - only one outstanding read, up to MAX_WR outstanding writes (responses in order)
+//   - the master never issues a read while a write is outstanding (read-after-write ordering is the
+//     master's job in XLR8; this slave has no ordering between the read and write channels)
+// Writes are committed to memory only when their response is issued, so a master that reports
+// completion before collecting write responses shows stale memory.
 module axi_mem_model #(
     parameter int          WORDS = 32768,
     parameter logic [31:0] BASE  = 32'h1000_0000,
-    parameter int          ID_W  = 6
+    parameter int          ID_W  = 6,
+    parameter int          MAX_WR = 8
 )(
     input  logic        clk,
     input  logic        rst_n,
@@ -74,29 +79,34 @@ module axi_mem_model #(
     logic        ar_prev_stall;
     logic [31:0] ar_prev_addr;
 
-    // ---------------- write side
-    logic        aw_have, w_have, wr_pending;
-    logic [31:0] aw_word, w_data_q;
-    logic [3:0]  w_strb_q;
-    logic        wr_err_q;
+    // ---------------- write side: address and data queues, a pending-response queue
+    logic [31:0] awq [$];
+    logic [31:0] wdq [$];
+    logic [3:0]  wsq [$];
+    logic [31:0] bq_word [$];
+    logic [31:0] bq_data [$];
+    logic [3:0]  bq_strb [$];
     logic        aw_prev_stall, w_prev_stall;
     logic [31:0] aw_prev_addr, w_prev_data;
+    int          wr_out;            // writes accepted (AW) and not yet answered
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             awready <= 1'b0; wready <= 1'b0; arready <= 1'b0;
             bvalid <= 1'b0; bresp <= 2'b00; bid <= '0;
             rvalid <= 1'b0; rresp <= 2'b00; rid <= '0; rlast <= 1'b0; rdata <= '0;
-            rd_pending <= 1'b0; aw_have <= 1'b0; w_have <= 1'b0; wr_pending <= 1'b0;
+            rd_pending <= 1'b0;
             ar_prev_stall <= 1'b0; aw_prev_stall <= 1'b0; w_prev_stall <= 1'b0;
-            n_ar <= 0; n_aw <= 0; n_proto_err <= 0;
+            n_ar <= 0; n_aw <= 0; n_proto_err <= 0; wr_out <= 0;
             last_ar_word <= '0; last_aw_word <= '0;
+            awq.delete(); wdq.delete(); wsq.delete(); bq_word.delete(); bq_data.delete(); bq_strb.delete();
         end else begin
             // ---- read address
             arready <= !rd_pending && pass();
             if (arvalid && arready) begin
                 if (arlen != 0 || arsize != 3'd2) perr("AR len/size");
                 if (!addr_ok(araddr)) perr($sformatf("AR address %08x", araddr));
+                if (wr_out != 0 || awq.size() != 0 || bq_word.size() != 0 || bvalid) perr("read issued with writes outstanding");
                 rd_word    <= (araddr - BASE) >> 2;
                 last_ar_word <= (araddr - BASE) >> 2;
                 rd_pending <= 1'b1;
@@ -119,45 +129,47 @@ module axi_mem_model #(
                 rvalid <= 1'b0; rd_pending <= 1'b0;
             end
 
-            // ---- write address / data
-            awready <= !aw_have && !wr_pending && pass();
-            wready  <= !w_have  && !wr_pending && pass();
+            // ---- write address / data (independent channels, queued)
+            awready <= (awq.size() < MAX_WR) && pass();
+            wready  <= (wdq.size() < MAX_WR) && pass();
             if (awvalid && awready) begin
                 if (awlen != 0 || awsize != 3'd2) perr("AW len/size");
                 if (!addr_ok(awaddr)) perr($sformatf("AW address %08x", awaddr));
-                aw_have <= 1'b1; aw_word <= (awaddr - BASE) >> 2;
+                if (wr_out >= MAX_WR) perr("more than MAX_WR writes outstanding");
+                awq.push_back((awaddr - BASE) >> 2);
                 last_aw_word <= (awaddr - BASE) >> 2;
-            end else if (awvalid && (aw_have || wr_pending)) begin
-                perr("second write outstanding (AW)");
+                wr_out <= wr_out + 1;
+                n_aw <= n_aw + 1;
             end
             if (wvalid && wready) begin
                 if (!wlast) perr("WLAST not set");
-                w_have <= 1'b1; w_data_q <= wdata; w_strb_q <= wstrb;
+                wdq.push_back(wdata); wsq.push_back(wstrb);
             end
             if (aw_prev_stall && !(awvalid && awaddr == aw_prev_addr)) perr("AW changed before ready");
             if (w_prev_stall  && !(wvalid  && wdata == w_prev_data))   perr("W changed before ready");
             aw_prev_stall <= awvalid && !awready; aw_prev_addr <= awaddr;
             w_prev_stall  <= wvalid  && !wready;  w_prev_data  <= wdata;
 
-            if (aw_have && w_have && !wr_pending && pass()) begin
-                if (aw_word < 32'(WORDS)) begin
-                    if (!(err_en && aw_word == err_word)) begin
-                        for (int b = 0; b < 4; b++)
-                            if (w_strb_q[b]) mem[aw_word[14:0]][b*8 +: 8] <= w_data_q[b*8 +: 8];
-                    end
-                end
-                wr_err_q   <= (err_en && aw_word == err_word);
-                wr_pending <= 1'b1;
-                aw_have    <= 1'b0;
-                w_have     <= 1'b0;
-                n_aw       <= n_aw + 1;
+            // a complete write moves to the response queue (not yet committed)
+            if (awq.size() != 0 && wdq.size() != 0) begin
+                bq_word.push_back(awq.pop_front());
+                bq_data.push_back(wdq.pop_front());
+                bq_strb.push_back(wsq.pop_front());
             end
-            if (wr_pending && !bvalid && pass()) begin
+            // ---- write response: commit to memory now, then answer, in order
+            if (bq_word.size() != 0 && !bvalid && pass()) begin
+                logic [31:0] w, d; logic [3:0] st; logic bad;
+                w = bq_word.pop_front(); d = bq_data.pop_front(); st = bq_strb.pop_front();
+                bad = err_en && w == err_word;
+                if (!bad && w < 32'(WORDS))
+                    for (int b = 0; b < 4; b++)
+                        if (st[b]) mem[w[14:0]][b*8 +: 8] <= d[b*8 +: 8];
                 bvalid <= 1'b1;
-                bresp  <= wr_err_q ? 2'b10 : 2'b00;
+                bresp  <= bad ? 2'b10 : 2'b00;
             end
             if (bvalid && bready) begin
-                bvalid <= 1'b0; wr_pending <= 1'b0;
+                bvalid <= 1'b0;
+                wr_out <= wr_out - 1 + ((awvalid && awready) ? 1 : 0);
             end
         end
     end
