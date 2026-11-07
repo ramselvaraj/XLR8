@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import animate_ref  # noqa: E402
 import ball_ref     # noqa: E402
 
-BASE = 0x40000000
+BASE = 0x40010000
 R = dict(CTRL=0x00, STATUS=0x04, THREADS=0x08, SRC=0x0C, DST=0x10, PROG=0x14, MBASE=0x18,
          MLIM=0x1C, IRQ=0x20, CYC=0x24, XACT=0x28, STALL=0x2C, ERRA=0x30, ID=0x34, VER=0x38,
          ARG0=0x3C, ARG1=0x40, WIN=0x1000)

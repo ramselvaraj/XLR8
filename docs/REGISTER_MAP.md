@@ -1,6 +1,8 @@
 # XLR8 Register Map
 
-Status: implemented and verified in simulation (Phase 2). The base address is assigned in Phase 3.
+Status: implemented, verified in simulation (Phase 2) and on hardware (Phases 4-5).
+Base address `0x4001_0000` (8 KiB), interrupt `IRQ_F2P[1]` (SPI 30). PYNQ's own device tree already
+uses `0x4000_0000`-`0x4000_FFFF` and `IRQ_F2P[0]` for a generic-uio node.
 Byte offsets, 32-bit registers, AXI4-Lite, 13-bit address space.
 
 | Offset | Name | Access | Description |

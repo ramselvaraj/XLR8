@@ -5,13 +5,13 @@
 #                      (default: $env(XLR8_BOARD_REPO), else the rv32-linux copy)
 #   until <stage>      bd | synth | impl | bit   (default bit)
 #   fclk <MHz>         PL clock from FCLK_CLK0   (default 50)
-#   slverr <0|1>       xlr8_regs SLVERR_EN       (default 1)
+#   slverr <0|1>       xlr8_regs SLVERR_EN       (default 0: an SLVERR kills the accessing process on the ARM)
 #   tag <name>         suffix for reports in results/ (default <fclk>mhz)
 set root [file normalize [file dirname [info script]]/../..]
 
 array set opt [list \
   board_repo [expr {[info exists ::env(XLR8_BOARD_REPO)] ? $::env(XLR8_BOARD_REPO) : "/mnt/windows/Users/ramse/linux_projects/rv32-linux/build/fpga/board_repo"}] \
-  until bit fclk 50 slverr 1 tag ""]
+  until bit fclk 50 slverr 0 tag ""]
 foreach {k v} $argv { set opt($k) $v }
 if {$opt(tag) eq ""} { set opt(tag) "$opt(fclk)mhz" }
 
@@ -66,11 +66,19 @@ connect_bd_net [get_bd_pins $rst/peripheral_aresetn] \
 connect_bd_intf_net [get_bd_intf_pins $ps/M_AXI_GP0] [get_bd_intf_pins $ic/S00_AXI]
 connect_bd_intf_net [get_bd_intf_pins $ic/M00_AXI]   [get_bd_intf_pins $x/s_axi_ctrl]
 connect_bd_intf_net [get_bd_intf_pins $x/m_axi]      [get_bd_intf_pins $ps/S_AXI_HP0]
-connect_bd_net [get_bd_pins $x/irq] [get_bd_pins $ps/IRQ_F2P]
+# IRQ_F2P[0] (SPI 29) is taken by PYNQ's own generic-uio node, so XLR8 uses IRQ_F2P[1] (SPI 30)
+set cc [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat irq_cc]
+set zero [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant irq_zero]
+set_property -dict [list CONFIG.NUM_PORTS 2] $cc
+set_property -dict [list CONFIG.CONST_WIDTH 1 CONFIG.CONST_VAL 0] $zero
+connect_bd_net [get_bd_pins $zero/dout] [get_bd_pins $cc/In0]
+connect_bd_net [get_bd_pins $x/irq] [get_bd_pins $cc/In1]
+connect_bd_net [get_bd_pins $cc/dout] [get_bd_pins $ps/IRQ_F2P]
 
 assign_bd_address
-# registers at a fixed address, 8 KiB (13-bit space)
-set_property offset 0x40000000 [get_bd_addr_segs -of_objects [get_bd_addr_spaces $ps/Data] -filter {NAME =~ *xlr8*}]
+# registers at a fixed address, 8 KiB (13-bit space). PYNQ's base device tree already owns
+# 0x40000000-0x4000FFFF (generic-uio), so XLR8 lives just above it.
+set_property offset 0x40010000 [get_bd_addr_segs -of_objects [get_bd_addr_spaces $ps/Data] -filter {NAME =~ *xlr8*}]
 set_property range 8K          [get_bd_addr_segs -of_objects [get_bd_addr_spaces $ps/Data] -filter {NAME =~ *xlr8*}]
 puts "ADDRESS MAP:"
 foreach s [get_bd_addr_segs -of_objects [get_bd_addr_spaces $ps/Data]] {

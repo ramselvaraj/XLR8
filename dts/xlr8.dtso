@@ -1,0 +1,35 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * Loads the bitstream through the FPGA region and instantiates the XLR8 platform device.
+ * Compile:  dtc -@ -I dts -O dtb -o xlr8.dtbo xlr8.dtso
+ * Apply on the board (as root), with xlr8.bit.bin in /lib/firmware:
+ *   mkdir /sys/kernel/config/device-tree/overlays/xlr8
+ *   cat xlr8.dtbo > /sys/kernel/config/device-tree/overlays/xlr8/dtbo
+ * Remove with rmdir on that directory.
+ */
+/ {
+	fragment@0 {
+		target = <&fpga_full>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			firmware-name = "xlr8.bit.bin";
+		};
+	};
+
+	fragment@1 {
+		target = <&amba>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			xlr8: xlr8@40010000 {
+				compatible = "ramselvaraj,xlr8-1.0";
+				reg = <0x40010000 0x2000>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 30 4>;      /* IRQ_F2P[1] = SPI 30, level high */
+			};
+		};
+	};
+};

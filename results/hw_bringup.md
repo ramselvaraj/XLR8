@@ -73,3 +73,12 @@ maintenance (`dma_sync_*`). Phase 5 uses `dma_alloc_coherent`.
     tools/board/run_bringup.sh 1000              # soak
     tools/board/run_bringup.sh 3 --errors        # error paths
     tools/board/run_bringup.sh 1 --coherence     # cache coherence
+
+## Re-run on the Linux bitstream (SLVERR_EN=0, base 0x4001_0000)
+
+`tools/board/run_bringup.sh 300` and `--errors` on `build/fpga/out_50mhz_linux`:
+
+- 300 frames exact, CYCLES mean 454,595 (9.09 ms at 50 MHz), same as before.
+- START while BUSY, program write while BUSY and the unmapped read now return OKAY (no SIGBUS); the
+  running job and the program memory are unchanged, STATUS shows BAD_ACCESS (`0xa` with DONE).
+- Small MEM_LIMIT, clean job after error and soft reset at 0, 0.5 and 2 ms behave as before.
