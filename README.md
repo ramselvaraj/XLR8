@@ -39,8 +39,23 @@ against a CPU render.*
 | 6 | Userspace library, renderer, animation | done (one command from cold boot to a verified GIF) |
 | 7 | Benchmarks against the ARM cores | done (GPU 16x to 218x slower than the A9; see results/benchmarks.md) |
 | 8 | Optimization and scale-out | done (ball 8.0x faster: arguments, posted writes; see results/optimization.md) |
-| 9 | Real images and a V4L2 device | done (a photo blurred on the GPU; `/dev/video0` streams 64x64 blur at 53.7 frames/s) |
+| 9 | Real images, Mandelbrot, Game of Life and a V4L2 device | done (a photo blurred on the GPU; `/dev/video0` streams 64x64 blur at 53.7 frames/s) |
 | 10 | Polish, demo, write-up | not started |
+
+## Gallery
+
+Everything below was rendered by the GPU in the FPGA through Linux and checked pixel for pixel against a
+reference. Kernels and numbers: [results/fractal_life.md](results/fractal_life.md).
+
+| Mandelbrot, 128x128 | Conway's Game of Life, glider gun |
+|---|---|
+| <img src="results/demo/mandelbrot_full.png" width="320"> | <img src="results/demo/life_sheet.png" width="400"> |
+
+| Zoomed Mandelbrot | Photo blurred on the GPU (before / after) |
+|---|---|
+| <img src="results/demo/mandelbrot_zoom.png" width="320"> | <img src="results/demo/blur_before_after.png" width="400"> |
+
+Animations: [bouncing ball](results/demo/ball.gif), [Game of Life](results/demo/life.gif).
 
 ## Quick start
 
