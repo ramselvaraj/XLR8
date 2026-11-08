@@ -7,7 +7,7 @@ cd "$(dirname "$0")/../.."
 find_board
 FRAMES=${1:-1000}
 MAIN_WORKLOADS=${MAIN_WORKLOADS-ball64 ball128 ball256 gradient64 blur64}   # set to empty to skip the main matrix
-ARGS_WORKLOADS=${ARGS_WORKLOADS-ball64a ball128a ball256a}
+ARGS_WORKLOADS=${ARGS_WORKLOADS-ball64a ball128a ball256a blur64n}
 BENCH_OUT=${BENCH_OUT:-results/bench}
 echo "board: $BOARD"
 .venv/bin/python tools/board/mk_bench_progs.py

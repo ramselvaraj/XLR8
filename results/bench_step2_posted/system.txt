@@ -1,0 +1,14 @@
+date: 2026-11-08T00:07:54Z
+kernel: 5.15.19-xilinx-v2022.1
+cpu: model name	: ARMv7 Processor rev 0 (v7l) / CPU part	: 0xc09
+cpufreq: ls: cannot access '/sys/devices/system/cpu/cpu0/cpufreq': No such file or directory
+clk fclk0 50000000 Hz
+clk armpll 1300000000 Hz
+clk cpu_1x 108333333 Hz
+clk cpu_2x 216666666 Hz
+clk cpu_3or2x 325000000 Hz
+clk cpu_6or4x 650000000 Hz
+load: 0.59 0.23 0.13 1/94 4512
+gcc: gcc (Ubuntu 11.2.0-19ubuntu1) 11.2.0
+numpy: 1.21.5
+pl_clock: [ 2815.358011] xlr8 40010000.xlr8: PL clock 50000000 Hz

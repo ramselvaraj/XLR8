@@ -21,13 +21,17 @@ Byte offsets, 32-bit registers, AXI4-Lite, 13-bit address space.
 | 0x2C | BUS_STALLS | R | clocks with a bus request waiting in the last job |
 | 0x30 | ERR_ADDR | R | GPU word address of the first illegal or errored access (time order) |
 | 0x34 | ID | R | `0x584C5238` ("XLR8") |
-| 0x38 | VERSION | R | `0x00MMNNPP` (currently `0x00000100`, version 0.1.0) |
-| 0x3C | ARG0 | RW | reserved for Phase 8 kernel arguments (stored, unused) |
-| 0x40 | ARG1 | RW | reserved for Phase 8 kernel arguments (stored, unused) |
+| 0x38 | VERSION | R | `0x00MMNNPP` (currently `0x00000200`, version 0.2.0: kernel arguments, posted writes) |
+| 0x3C | ARG0 | RW | kernel argument 0, preloaded into `r8` of every lane at the start of each wave |
+| 0x40 | ARG1 | RW | kernel argument 1 (`r9`) |
+| 0x44 | ARG2 | RW | kernel argument 2 (`r10`) |
+| 0x48 | ARG3 | RW | kernel argument 3 (`r11`) |
+| 0x4C | ARG4 | RW | kernel argument 4 (`r12`) |
+| 0x50 | ARG5 | RW | kernel argument 5 (`r13`) |
 | 0x1000-0x17FF | PROG_WIN | RW | program RAM, 512 words, instruction 2w in bits [15:0], 2w+1 in [31:16] |
 
 Anything else is unmapped: reads and writes return SLVERR (or OKAY when `SLVERR_EN=0`) and set
-BAD_ACCESS.
+BAD_ACCESS. (`0x54` and above are unmapped.)
 
 ## Rules
 
@@ -36,6 +40,11 @@ BAD_ACCESS.
 - Configuration is shadowed. START snapshots THREADS, SRC, DST, PROG_BASE, MEM_BASE, MEM_LIMIT,
   ARG0 and ARG1. Writes during a job change only the shadow, which START picks up next time.
 - START clears DONE, ERROR, BAD_ACCESS, ERR_ADDR, IRQ_STATUS and the performance counters.
+- DONE (and the interrupt) rise only after the GPU has finished AND every posted write has its
+  response, so data in memory is complete when software sees DONE. A late write error is reported
+  (ERROR, ERR_ADDR) before DONE.
+- Kernel arguments are ordinary registers: the GPU loads `r8..r13` from `ARG0..ARG5` when each wave
+  starts, and a kernel may overwrite them. START snapshots them like the other settings.
 - DONE stays set until the next START (reading STATUS never clears it). IRQ_STATUS can be cleared
   separately by writing 1s.
 - The interrupt line is `IRQ_EN && (IRQ_STATUS != 0)`. CTRL is written whole, so a START write

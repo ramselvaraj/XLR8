@@ -33,4 +33,9 @@ p2, m2 = assemble.assemble(f".gen_blur_border {W} {H}\n.src 0x2000\n.dst 0x6000\
 assert (len(p1), m1["threads"], m2["threads"]) == (125, 3844, 252), (len(p1), m1["threads"], m2["threads"])
 assert len(p1) + len(p2) <= 1024
 write("blur64.hex", p1 + p2)
+q1, mq1 = assemble.assemble(f".gen_blur {W} {H} nodiv\n.src 0x2000\n.dst 0x6000\n")[:2]
+q2, mq2 = assemble.assemble(f".gen_blur_border {W} {H} nodiv\n.src 0x2000\n.dst 0x6000\n")[:2]
+assert (mq1["threads"], mq2["threads"]) == (3844, 252) and len(q1) + len(q2) <= 1024
+write("blur64n.hex", q1 + q2)
+print(f"blur64n (no DIV): interior {len(q1)} instr at 0, border {len(q2)} instr at {len(q1)}")
 print(f"blur64: interior {len(p1)} instr at 0, border {len(p2)} instr at {len(p1)}; total {len(p1) + len(p2)}")

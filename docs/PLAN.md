@@ -101,8 +101,7 @@ over RAPTOR-SoC, where CPU and GPU were separate domains.
 | 0x30 | ERR_ADDR | R | first out-of-range GPU word address |
 | 0x34 | ID | R | `0x584C5238` ("XLR8") |
 | 0x38 | VERSION | R | major.minor.patch, one byte each |
-| 0x3C | ARG0 | RW | reserved for Phase 8 kernel arguments |
-| 0x40 | ARG1 | RW | reserved for Phase 8 kernel arguments |
+| 0x3C-0x50 | ARG0..ARG5 | RW | kernel arguments, preloaded into r8..r13 (hardware 0.2.0, Phase 8) |
 | 0x1000-0x17FF | PROG_WIN | RW | program RAM, two 16-bit instructions per 32-bit word, 512 words |
 
 Rules:

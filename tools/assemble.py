@@ -64,7 +64,20 @@ def enc_r(op, a, b, c):
     return (op << 12) | (a << 8) | (b << 4) | c
 
 
-def emit_blur(W, H):
+def mulshift(d, max_val, s_min=8):
+    """(M, S) with floor(x*M / 2^S) == floor(x/d) for every 0 <= x <= max_val, and M < 2^16, S <= 31."""
+    for S in range(s_min, 32):
+        M = ((1 << S) + d - 1) // d
+        if M >= (1 << 16):
+            break
+        if (max_val * M) >> 32:
+            break
+        if all((x * M) >> S == x // d for x in range(max_val + 1)):
+            return M, S
+    raise ValueError(f"no multiply-shift for /{d} up to {max_val}")
+
+
+def emit_blur(W, H, nodiv=False):
     """Emit a fully-unrolled interior 3x3 box blur for a W x H image.
 
     One thread per interior pixel t in [0, (W-2)*(H-2)):
@@ -83,17 +96,32 @@ def emit_blur(W, H):
     def R(op, rd, rs1, rs2):
         prog.append(enc_r(OPCODES[op], rd, rs1, rs2))
 
+    def load_const(rd, tmp, val):          # 16-bit constant from 8-bit immediates
+        assert 0 <= val < (1 << 16)
+        if val < 256:
+            C(rd, val)
+        else:
+            C(rd, val >> 8); C(tmp, 8); R("SLL", rd, rd, tmp); C(tmp, val & 0xFF); R("OR", rd, rd, tmp)
+
     # constants + accumulators
     C(6, 0xFF)
     C(7, 16)
     C(8, 8)
-    C(9, 9)
+    if nodiv:
+        load_const(9, 1, mulshift(9, 9 * 255, 16)[0])      # x//9 == (x*M)>>16, exact for sums up to 2295
+        assert mulshift(9, 9 * 255, 16)[1] == 16
+    else:
+        C(9, 9)
     C(10, 0)
     C(11, 0)
     C(12, 0)
     # x = t % iw + 1 ; y = t / iw + 1 ; p = y*W + x
     C(1, iw)
-    R("DIV", 2, 0, 1)      # q = t / iw
+    if nodiv:
+        Mq, Sq = mulshift(iw, iw * (H - 2))
+        load_const(2, 3, Mq); R("MUL", 2, 0, 2); C(3, Sq); R("SRL", 2, 2, 3)     # q = (t*M) >> S
+    else:
+        R("DIV", 2, 0, 1)      # q = t / iw
     R("MUL", 3, 2, 1)      # q*iw
     R("SUB", 4, 0, 3)      # x0 = t - q*iw
     C(5, 1)
@@ -121,9 +149,13 @@ def emit_blur(W, H):
         R("AND", 4, 3, 6)          # r4 = r3 & 0xFF (B)
         R("ADD", 12, 12, 4)        # sumB += B
 
-    R("DIV", 10, 10, 9)
-    R("DIV", 11, 11, 9)
-    R("DIV", 12, 12, 9)
+    if nodiv:
+        for rr in (10, 11, 12):
+            R("MUL", rr, rr, 9); R("SRL", rr, rr, 7)     # sum//9 as (sum*7282) >> 16
+    else:
+        R("DIV", 10, 10, 9)
+        R("DIV", 11, 11, 9)
+        R("DIV", 12, 12, 9)
     R("SLL", 10, 10, 7)            # R << 16
     R("SLL", 11, 11, 8)            # G << 8
     R("OR", 10, 10, 11)
@@ -133,7 +165,7 @@ def emit_blur(W, H):
     return prog, iw * (H - 2)
 
 
-def emit_blur_border(W, H):
+def emit_blur_border(W, H, nodiv=False):
     """Emit a fully-unrolled clamped border 3x3 box blur for a W x H image.
 
     One thread per border pixel, in this order:
@@ -236,10 +268,17 @@ def emit_blur_border(W, H):
             R("AND", TB, TA, BYTE)
             R("ADD", SUMB, SUMB, TB)
 
-    C(TB, 9)
-    R("DIV", SUMR, SUMR, TB)
-    R("DIV", SUMG, SUMG, TB)
-    R("DIV", SUMB, SUMB, TB)
+    if nodiv:
+        M9 = mulshift(9, 9 * 255, 16)[0]                       # (sum*M) >> 16 == sum//9, sums up to 2295
+        C(TB, M9 >> 8); C(TA, 8); R("SLL", TB, TB, TA); C(TA, M9 & 0xFF); R("OR", TB, TB, TA)
+        C(TA, 16)
+        for rr in (SUMR, SUMG, SUMB):
+            R("MUL", rr, rr, TB); R("SRL", rr, rr, TA)
+    else:
+        C(TB, 9)
+        R("DIV", SUMR, SUMR, TB)
+        R("DIV", SUMG, SUMG, TB)
+        R("DIV", SUMB, SUMB, TB)
     C(TB, 16); R("SLL", SUMR, SUMR, TB)
     R("SLL", SUMG, SUMG, SH8)                 # G << 8
     R("OR", SUMR, SUMR, SUMG)
@@ -276,17 +315,17 @@ def assemble(text):
                 src = int(parts[1], 0)
             elif d == ".dst" and len(parts) == 2:
                 dst = int(parts[1], 0)
-            elif d == ".gen_blur" and len(parts) == 3:
+            elif d == ".gen_blur" and len(parts) in (3, 4):
                 width, height = int(parts[1], 0), int(parts[2], 0)
-                body, n = emit_blur(width, height)
+                body, n = emit_blur(width, height, nodiv=len(parts) == 4 and parts[3] == "nodiv")
                 prog.extend(body)
                 interior = True
                 pass_kind = "interior"
                 if threads is None:
                     threads = n
-            elif d == ".gen_blur_border" and len(parts) == 3:
+            elif d == ".gen_blur_border" and len(parts) in (3, 4):
                 width, height = int(parts[1], 0), int(parts[2], 0)
-                body, n = emit_blur_border(width, height)
+                body, n = emit_blur_border(width, height, nodiv=len(parts) == 4 and parts[3] == "nodiv")
                 prog.extend(body)
                 pass_kind = "border"
                 if threads is None:

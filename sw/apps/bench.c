@@ -33,7 +33,7 @@
 struct work {
 	const char *name;
 	int w, h;
-	int kind;                       /* 0 ball, 1 gradient, 2 blur, 3 ball with kernel arguments (GPU only) */
+	int kind;                       /* 0 ball, 1 gradient, 2 blur, 3 ball with kernel arguments, 4 blur without DIV (GPU only) */
 	uint32_t threads, src, dst;
 };
 static const struct work W_TABLE[] = {
@@ -45,10 +45,12 @@ static const struct work W_TABLE[] = {
 	{ "ball256a",   256, 256, 3, 256 * 256,   0x2000, 0x2010 },
 	{ "gradient64", 64,  64,  1, 64 * 64,     0x2000, 0x6000 },
 	{ "blur64",     64,  64,  2, 0,           0x2000, 0x6000 },
+	{ "blur64n",    64,  64,  4, 0,           0x2000, 0x6000 },
 };
 #define BLUR_T1 3844u               /* interior pass threads, program at base 0   */
 #define BLUR_T2 252u                /* border pass threads, program at base 125   */
-#define BLUR_BASE2 125u
+#define BLUR_BASE2 125u             /* border program starts here after the interior program */
+#define BLUR_BASE2_NODIV 139u
 
 static uint32_t blur_in[64 * 64];
 
@@ -163,8 +165,9 @@ static int gpu_frame(struct gpu *g, const struct work *wk, long cx, long cy, lon
 	}
 	const uint32_t kargs[5] = { (uint32_t)cx, (uint32_t)cy, (uint32_t)r2, BALL, BG };
 	t1 = ns(); t->prep = t1 - t0;
-	if (wk->kind == 2) {
-		static const uint32_t thr[2] = { BLUR_T1, BLUR_T2 }, base[2] = { 0, BLUR_BASE2 };
+	if (wk->kind == 2 || wk->kind == 4) {
+		static const uint32_t thr[2] = { BLUR_T1, BLUR_T2 };
+		const uint32_t base[2] = { 0, wk->kind == 4 ? BLUR_BASE2_NODIV : BLUR_BASE2 };
 		for (int p = 0; p < 2; p++) {
 			t1 = ns();
 			if ((ret = xlr8_submit(g->x, thr[p], wk->src, wk->dst, base[p]))) return ret;
@@ -221,13 +224,13 @@ int main(int argc, char **argv)
 		if (!strcmp(W_TABLE[i].name, wname)) wk = &W_TABLE[i];
 	if (!wk) { fprintf(stderr, "unknown workload %s\n", wname); return 2; }
 	int is_gpu = !strcmp(impl, "xlr8"), is_neon = !strcmp(impl, "neon");
-	if (wk->kind == 3 && !is_gpu) { fprintf(stderr, "%s runs on the GPU only\n", wk->name); return 2; }
+	if ((wk->kind == 3 || wk->kind == 4) && !is_gpu) { fprintf(stderr, "%s runs on the GPU only\n", wk->name); return 2; }
 	if (!is_gpu && !is_neon && strcmp(impl, "scalar")) { fprintf(stderr, "unknown impl %s\n", impl); return 2; }
 #ifndef __ARM_NEON
 	if (is_neon) { fprintf(stderr, "built without NEON\n"); return 2; }
 #endif
 	if (is_neon && wk->kind == 2) { fprintf(stderr, "# neon blur not implemented, skipped\n"); return 0; }
-	if (wk->kind == 2) make_blur_input();
+	if (wk->kind == 2 || wk->kind == 4) make_blur_input();
 
 	long radius = wk->w / 9;
 	if (is_gpu) {
@@ -237,7 +240,7 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		g.buf = xlr8_buf(g.x);
-		if (wk->kind == 2) memcpy(g.buf + wk->src, blur_in, sizeof(blur_in));
+		if (wk->kind == 2 || wk->kind == 4) memcpy(g.buf + wk->src, blur_in, sizeof(blur_in));
 	}
 
 	/* ---- correctness first: the first frames of this run must equal the scalar reference */

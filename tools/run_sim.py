@@ -44,9 +44,9 @@ def run_full_frame(args, P):
 
     src, dst = SRC_ADDR, DST_ADDR
     prog_i, meta_i = assemble.assemble(
-        f".gen_blur {W} {H}\n.src {src:#x}\n.dst {dst:#x}\n")[:2]
+        f".gen_blur {W} {H}{' nodiv' if args.nodiv else ''}\n.src {src:#x}\n.dst {dst:#x}\n")[:2]
     prog_b, meta_b = assemble.assemble(
-        f".gen_blur_border {W} {H}\n.src {src:#x}\n.dst {dst:#x}\n")[:2]
+        f".gen_blur_border {W} {H}{' nodiv' if args.nodiv else ''}\n.src {src:#x}\n.dst {dst:#x}\n")[:2]
     ti, tb = meta_i["threads"], meta_b["threads"]
     count = W * H
     print(f"assemble: interior {len(prog_i)} instr ({ti} threads), "
@@ -134,6 +134,7 @@ def main():
     ap.add_argument("--full", action="store_true",
                     help="Phase 3 clamped full-frame blur (interior + border)")
     ap.add_argument("--trace", action="store_true", help="emit an RTL trace")
+    ap.add_argument("--nodiv", action="store_true", help="divide-free blur kernels (multiply and shift)")
     args = ap.parse_args()
 
     args.workdir = os.path.abspath(args.workdir)

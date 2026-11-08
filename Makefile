@@ -112,10 +112,13 @@ test-gpu: build build-seqdiv test-unit test-py
 	$(PY) tools/run_sim.py --full --width 64 --height 64
 	$(PY) tools/run_sim.py --kernel sw/kernels/blur.asm --binary $(SEQ_OBJ)/Vtb_gpu
 	$(PY) tools/run_sim.py --full --width 64 --height 64 --binary $(SEQ_OBJ)/Vtb_gpu
+	$(PY) tools/run_sim.py --full --width 64 --height 64 --nodiv --binary $(SEQ_OBJ)/Vtb_gpu
+	$(PY) tools/run_sim.py --full --width 32 --height 32 --nodiv
 	$(MAKE) test-div
 
 # Phase 6: userspace library (fake driver, ASan/UBSan), image writers, Python binding
 test-sw:
+	$(PY) tools/tests/test_blur_nodiv.py
 	$(PY) tools/tests/test_bench_numpy.py
 	$(PY) tools/tests/test_ball_sizes.py
 	$(MAKE) -C sw test
