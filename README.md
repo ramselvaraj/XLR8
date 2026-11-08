@@ -49,13 +49,13 @@ reference. Kernels and numbers: [results/fractal_life.md](results/fractal_life.m
 
 | Mandelbrot, 128x128 | Conway's Game of Life, glider gun |
 |---|---|
-| <img src="results/demo/mandelbrot_full.png" width="320"> | <img src="results/demo/life_sheet.png" width="400"> |
+| <img src="results/demo/mandelbrot_full.png" width="320"> | <img src="results/demo/life.gif" width="320"> |
 
 | Zoomed Mandelbrot | Photo blurred on the GPU (before / after) |
 |---|---|
 | <img src="results/demo/mandelbrot_zoom.png" width="320"> | <img src="results/demo/blur_before_after.png" width="400"> |
 
-Animations: [bouncing ball](results/demo/ball.gif), [Game of Life](results/demo/life.gif).
+Game of Life is an animated GIF: 150 generations, one GPU launch each. A still sheet of twelve of the frames is in [results/demo/life_sheet.png](results/demo/life_sheet.png).
 
 ## Quick start
 
