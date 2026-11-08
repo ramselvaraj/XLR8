@@ -117,7 +117,9 @@ test-gpu: build build-seqdiv test-unit test-py
 	$(MAKE) test-div
 
 # Phase 6: userspace library (fake driver, ASan/UBSan), image writers, Python binding
-test-sw:
+test-sw: build-args
+	$(PY) tools/tests/test_mandelbrot.py
+	$(PY) tools/tests/test_life.py
 	$(PY) tools/tests/test_fw_header.py
 	$(PY) tools/tests/test_blur_nodiv.py
 	$(PY) tools/tests/test_bench_numpy.py

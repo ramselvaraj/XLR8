@@ -74,7 +74,8 @@ class Device:
         self.close()
 
     def info(self):
-        v = struct.unpack("<16I", fcntl.ioctl(self.fd, GET_INFO, bytearray(_INFO.size)))
+        # immutable bytes: ioctl then returns the filled buffer (a bytearray would return an int)
+        v = struct.unpack("<16I", fcntl.ioctl(self.fd, GET_INFO, bytes(_INFO.size)))
         return dict(uapi_version=v[0], id=v[1], hw_version=v[2], status=v[3], max_prog_instrs=v[4], buf_size=v[5])
 
     def load(self, instrs):
