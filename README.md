@@ -55,8 +55,6 @@ reference. Kernels and numbers: [results/fractal_life.md](results/fractal_life.m
 |---|---|
 | <img src="results/demo/mandelbrot_zoom.png" width="320"> | <img src="results/demo/blur_before_after.png" width="400"> |
 
-Game of Life is an animated GIF: 150 generations, one GPU launch each. A still sheet of twelve of the frames is in [results/demo/life_sheet.png](results/demo/life_sheet.png).
-
 ## Quick start
 
     make test                       # all simulation and host tests (needs verilator, python venv)
