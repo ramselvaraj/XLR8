@@ -14,8 +14,9 @@ No HDMI. Output is a framebuffer in DDR that userspace saves as PNG/GIF and view
 
 ## Status
 
-Phases 0 to 6 are done and verified: simulation, FPGA build (timing met at 50 MHz), hardware
-bring-up, a Linux driver, and a userspace renderer. See [docs/PLAN.md](docs/PLAN.md) and the phase
+Phases 0 to 8 are done and verified on the board: simulation, FPGA build (timing met at 50 MHz),
+hardware bring-up, a Linux driver, a userspace renderer, benchmarks against the ARM cores, and
+an 8x speedup from optimization. Phase 9 is narrowed to a V4L2 device (in progress). See [docs/PLAN.md](docs/PLAN.md) and the phase
 documents; every number below is backed by a file in `results/`.
 
 ![ball rendered on the GPU](results/demo/ball.gif)
@@ -25,7 +26,7 @@ against a CPU render.*
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Import, baseline, tooling | GPU imported, tests pass; toolchain items open |
+| 0 | Import, baseline, tooling | done |
 | 1 | Ball kernel and golden model in simulation | done |
 | 2 | AXI wrapper (AXI4-Lite slave + AXI master bridge) | done |
 | 3 | Vivado build for PYNQ-Z2 | done (50 MHz, WNS +0.971 ns) |
@@ -34,7 +35,7 @@ against a CPU render.*
 | 6 | Userspace library, renderer, animation | done (one command from cold boot to a verified GIF) |
 | 7 | Benchmarks against the ARM cores | done (GPU 16x to 218x slower than the A9; see results/benchmarks.md) |
 | 8 | Optimization and scale-out | done (ball 8.0x faster: arguments, posted writes; see results/optimization.md) |
-| 9 | Screen output, V4L2, dma-buf, RISC-V host, formal/UVM (all committed scope) | not started |
+| 9 | Extended goals | real-image blur through Linux done; V4L2 mem2mem device next. Skipped by choice: screen output, dma-buf export, RISC-V host, formal/UVM |
 | 10 | Polish, demo, write-up | not started |
 
 ## Quick start
@@ -48,11 +49,12 @@ against a CPU render.*
 
 | | |
 |---|---|
-| Timing, PYNQ-Z2 | met at 50 MHz, WNS +0.644 ns, WHS +0.092 ns (`results/timing_summary_50mhz.md`) |
-| Resources | 31.0k LUT (58%), 24 DSP, 0 BRAM |
+| Timing, PYNQ-Z2 | met at 50 MHz, final build WNS +0.579 ns, WHS +0.051 ns (`results/timing_*_posted.rpt`, history in `results/optimization.md`) |
+| Resources | 32.9k LUT (62%), 24 DSP, 0 BRAM (final build) |
 | Ball frame, 64x64 | 52,741 cycles = 1.17 ms at 50 MHz after Phase 8 (9.4 ms before), 4,096 bus transactions |
 | Bridge into ideal memory (sim) | 192,001 cycles; real DDR adds about 10 cycles per transaction |
 | vs ARM (ball 64x64) | GPU 1.17 ms (9.4 ms before Phase 8); ARM scalar 0.051 ms, NEON 0.043 ms, NumPy 0.52 ms. GPU uses 1% of a core while running. |
+| Real image | a photo blurred on the GPU through `/dev/xlr8`, 0 of 4,096 pixels differ from the CPU blur (`results/demo/blur_before_after.png`) |
 | Driver | 1,000 frames exact over interrupts, 4 concurrent processes, SIGKILL mid-job, watchdog, 10,000 open/close without a leak |
 
 ## Layout
