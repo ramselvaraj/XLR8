@@ -20,7 +20,7 @@ The GPU renders into a framebuffer in DDR, and userspace saves the frames as PNG
 
 Phases 0 to 8 are done and verified on the board: simulation, FPGA build (timing met at 50 MHz),
 hardware bring-up, a Linux driver, a userspace renderer, benchmarks against the ARM cores, and
-an 8x speedup from optimization. Phase 9 is narrowed to a V4L2 device (in progress). See [docs/PLAN.md](docs/PLAN.md) and the phase
+an 8x speedup from optimization. The GPU is also a standard V4L2 video device. See [docs/PLAN.md](docs/PLAN.md) and the phase
 documents; every number below is backed by a file in `results/`.
 
 ![ball rendered on the GPU](results/demo/ball.gif)
@@ -39,7 +39,7 @@ against a CPU render.*
 | 6 | Userspace library, renderer, animation | done (one command from cold boot to a verified GIF) |
 | 7 | Benchmarks against the ARM cores | done (GPU 16x to 218x slower than the A9; see results/benchmarks.md) |
 | 8 | Optimization and scale-out | done (ball 8.0x faster: arguments, posted writes; see results/optimization.md) |
-| 9 | Real images and a V4L2 device | real-image blur through Linux done; V4L2 mem2mem device in progress |
+| 9 | Real images and a V4L2 device | done (a photo blurred on the GPU; `/dev/video0` streams 64x64 blur at 53.7 frames/s) |
 | 10 | Polish, demo, write-up | not started |
 
 ## Quick start
@@ -58,6 +58,7 @@ against a CPU render.*
 | Ball frame, 64x64 | 52,741 cycles = 1.17 ms at 50 MHz after Phase 8 (9.4 ms before), 4,096 bus transactions |
 | Bridge into ideal memory (sim) | 192,001 cycles; real DDR adds about 10 cycles per transaction |
 | vs ARM (ball 64x64) | GPU 1.17 ms (9.4 ms before Phase 8); ARM scalar 0.051 ms, NEON 0.043 ms, NumPy 0.52 ms. GPU uses 1% of a core while running. |
+| V4L2 | `/dev/video0` blurs 64x64 frames on the GPU at 53.7 frames/s, every frame exact (`results/v4l2.md`) |
 | Real image | a photo blurred on the GPU through `/dev/xlr8`, 0 of 4,096 pixels differ from the CPU blur (`results/demo/blur_before_after.png`) |
 | Driver | 1,000 frames exact over interrupts, 4 concurrent processes, SIGKILL mid-job, watchdog, 10,000 open/close without a leak |
 

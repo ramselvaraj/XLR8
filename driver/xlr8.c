@@ -24,6 +24,7 @@
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 
+#include "xlr8_priv.h"
 #include "xlr8_uapi.h"
 
 #define DRV_NAME "xlr8"
@@ -68,6 +69,9 @@ struct xlr8_ctx {
 	/* job state, protected by dev->lock */
 	bool submitted;
 	bool done;
+	bool hold;              /* kernel job: keep the device claimed across launches */
+	u16 *prog;              /* this file's program, reloaded at SUBMIT if the RAM holds another's */
+	u32 nprog;
 	struct xlr8_wait res;
 	wait_queue_head_t wq;
 };
@@ -87,7 +91,10 @@ struct xlr8_dev {
 	struct delayed_work wd;
 	unsigned long irq_count;
 	u32 hw_version;
+	const void *prog_owner; /* whose program is in the program RAM right now (NULL: unknown) */
 };
+
+static struct xlr8_dev *g_dev;     /* the one device, for in-kernel users */
 
 static inline u32 rd(struct xlr8_dev *d, u32 off) { return ioread32(d->regs + off); }
 static inline void wr(struct xlr8_dev *d, u32 off, u32 v) { iowrite32(v, d->regs + off); }
@@ -118,7 +125,7 @@ static void release_dev(struct xlr8_dev *d)
 	d->running = false;
 	d->owner = NULL;
 	spin_unlock_irqrestore(&d->lock, fl);
-	wake_up_interruptible_all(&d->idle_wq);
+	wake_up_all(&d->idle_wq);
 }
 
 static void capture(struct xlr8_dev *d, struct xlr8_ctx *c, u32 extra)
@@ -166,7 +173,7 @@ static void abort_job(struct xlr8_dev *d, struct xlr8_ctx *c, u32 flag)
 	c->res.status |= flag;
 	c->done = true;
 	spin_unlock_irqrestore(&d->lock, fl);
-	wake_up_interruptible_all(&c->wq);
+	wake_up_all(&c->wq);
 	release_dev(d);
 }
 
@@ -203,14 +210,86 @@ static irqreturn_t xlr8_irq(int irq, void *data)
 		d->running = false;
 		capture(d, c, 0);
 		c->done = true;
-		d->busy = false;
-		d->owner = NULL;
-		wake_up_interruptible_all(&c->wq);
-		wake_up_interruptible_all(&d->idle_wq);
+		if (!c->hold) {
+			d->busy = false;
+			d->owner = NULL;
+			wake_up_all(&d->idle_wq);
+		}
+		wake_up_all(&c->wq);
 	}
 	spin_unlock(&d->lock);
 	return IRQ_HANDLED;
 }
+
+/* ---------------------------------------------------------------- in-kernel jobs */
+
+static int write_prog(struct xlr8_dev *d, const u16 *ins, u32 count);
+static void start_job(struct xlr8_dev *d, struct xlr8_ctx *c, u32 threads, u32 src, u32 dst,
+		      u32 prog_base, const u32 *args, u32 mbase, u32 mlim);
+
+static void release_if_owner(struct xlr8_dev *d, struct xlr8_ctx *c)
+{
+	unsigned long fl;
+	bool mine;
+
+	spin_lock_irqsave(&d->lock, fl);
+	mine = d->owner == c;
+	spin_unlock_irqrestore(&d->lock, fl);
+	if (mine)
+		release_dev(d);         /* the watchdog may already have released it */
+}
+
+int xlr8_kjob_run(struct xlr8_dev *d, const struct xlr8_kjob *j)
+{
+	struct xlr8_ctx kc = { .dev = d, .hold = true };
+	unsigned int p;
+	int ret = 0;
+
+	if (!j->npass || j->npass > XLR8_KJOB_MAX_PASS || !j->nprog || j->nprog > XLR8_MAX_PROG)
+		return -EINVAL;
+	init_waitqueue_head(&kc.wq);
+	wait_event(d->idle_wq, try_claim(d, &kc));
+
+	ret = write_prog(d, j->prog, j->nprog);     /* every job loads its own program */
+	d->prog_owner = NULL;                       /* ...which then belongs to no /dev/xlr8 file */
+	for (p = 0; !ret && p < j->npass; p++) {
+		long left;
+
+		start_job(d, &kc, j->pass[p].threads, j->src, j->dst, j->pass[p].prog_base, NULL,
+			  j->mbase, j->mlim);
+		left = wait_event_timeout(kc.wq, kc.done, msecs_to_jiffies(job_timeout_ms + 1000));
+		if (!left && !kc.done) {
+			abort_job(d, &kc, XLR8_ST_TIMEOUT);
+			ret = -ETIMEDOUT;
+		} else if (kc.res.status & (XLR8_ST_ERROR | XLR8_ST_TIMEOUT | XLR8_ST_ABORTED)) {
+			ret = (kc.res.status & XLR8_ST_TIMEOUT) ? -ETIMEDOUT : -EIO;
+		}
+	}
+	release_if_owner(d, &kc);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(xlr8_kjob_run);
+
+struct xlr8_dev *xlr8_dev_get(void)
+{
+	struct xlr8_dev *d = g_dev;
+
+	return (d && try_module_get(THIS_MODULE)) ? d : NULL;
+}
+EXPORT_SYMBOL_GPL(xlr8_dev_get);
+
+void xlr8_dev_put(struct xlr8_dev *d)
+{
+	(void)d;
+	module_put(THIS_MODULE);
+}
+EXPORT_SYMBOL_GPL(xlr8_dev_put);
+
+struct device *xlr8_dev_device(struct xlr8_dev *d)
+{
+	return d->dev;
+}
+EXPORT_SYMBOL_GPL(xlr8_dev_device);
 
 /* ---------------------------------------------------------------- file operations */
 
@@ -248,7 +327,16 @@ static int xlr8_release(struct inode *inode, struct file *f)
 	wait_event(d->idle_wq, ({ unsigned long fl; bool mine;
 		spin_lock_irqsave(&d->lock, fl); mine = (d->owner == c); spin_unlock_irqrestore(&d->lock, fl);
 		!mine; }));
+	{
+		unsigned long fl;
+
+		spin_lock_irqsave(&d->lock, fl);
+		if (d->prog_owner == c)
+			d->prog_owner = NULL;
+		spin_unlock_irqrestore(&d->lock, fl);
+	}
 	free_buf(c);
+	kfree(c->prog);
 	kfree(c);
 	return 0;
 }
@@ -259,6 +347,54 @@ static int check_zero(const u32 *r, int n)
 		if (*r++)
 			return -EINVAL;
 	return 0;
+}
+
+/* Write n instructions into the program RAM and read them back. The caller holds the device. */
+static int write_prog(struct xlr8_dev *d, const u16 *ins, u32 count)
+{
+	u32 w, n = (count + 1) / 2;
+
+	for (w = 0; w < n; w++) {
+		u32 lo = ins[2 * w];
+		u32 hi = (2 * w + 1 < count) ? ins[2 * w + 1] : 0;
+
+		wr(d, R_WIN + 4 * w, (hi << 16) | lo);
+	}
+	for (w = 0; w < n; w++) {           /* read back what the GPU will fetch */
+		u32 lo = ins[2 * w];
+		u32 hi = (2 * w + 1 < count) ? ins[2 * w + 1] : 0;
+
+		if (rd(d, R_WIN + 4 * w) != ((hi << 16) | lo))
+			return -EIO;
+	}
+	return 0;
+}
+
+/* Program the registers and start one launch for ctx c. The caller holds the device. */
+static void start_job(struct xlr8_dev *d, struct xlr8_ctx *c, u32 threads, u32 src, u32 dst,
+		      u32 prog_base, const u32 *args, u32 mbase, u32 mlim)
+{
+	unsigned long fl;
+	int k;
+
+	spin_lock_irqsave(&d->lock, fl);
+	c->submitted = true;
+	c->done = false;
+	memset(&c->res, 0, sizeof(c->res));
+	d->running = true;
+	spin_unlock_irqrestore(&d->lock, fl);
+
+	wr(d, R_THREADS, threads);
+	wr(d, R_SRC, src);
+	wr(d, R_DST, dst);
+	wr(d, R_PROG, prog_base);
+	if (d->hw_version >= 0x200)
+		for (k = 0; k < XLR8_NARGS; k++)
+			wr(d, R_ARG0 + 4 * k, args ? args[k] : 0);
+	wr(d, R_MBASE, mbase);
+	wr(d, R_MLIM, mlim);
+	mod_delayed_work(system_wq, &d->wd, msecs_to_jiffies(job_timeout_ms));
+	wr(d, R_CTRL, CTRL_START | CTRL_IRQ_EN);    /* CTRL is written whole: keep IRQ_EN set */
 }
 
 static long do_info(struct xlr8_ctx *c, void __user *arg)
@@ -280,7 +416,6 @@ static long do_load_prog(struct xlr8_ctx *c, void __user *arg)
 	struct xlr8_dev *d = c->dev;
 	struct xlr8_prog p;
 	u16 *ins;
-	u32 w, n;
 	long ret;
 
 	if (copy_from_user(&p, arg, sizeof(p)))
@@ -298,21 +433,13 @@ static long do_load_prog(struct xlr8_ctx *c, void __user *arg)
 		kfree(ins);
 		return ret;
 	}
-	n = (p.count + 1) / 2;
-	for (w = 0; w < n; w++) {
-		u32 lo = ins[2 * w];
-		u32 hi = (2 * w + 1 < p.count) ? ins[2 * w + 1] : 0;
-
-		wr(d, R_WIN + 4 * w, (hi << 16) | lo);
-	}
-	for (w = 0; w < n; w++) {           /* read back what the GPU will fetch */
-		u32 lo = ins[2 * w];
-		u32 hi = (2 * w + 1 < p.count) ? ins[2 * w + 1] : 0;
-
-		if (rd(d, R_WIN + 4 * w) != ((hi << 16) | lo)) {
-			ret = -EIO;
-			break;
-		}
+	ret = write_prog(d, ins, p.count);
+	if (!ret) {
+		kfree(c->prog);
+		c->prog = ins;                      /* kept so SUBMIT can reload it */
+		c->nprog = p.count;
+		d->prog_owner = c;
+		ins = NULL;
 	}
 	release_dev(d);
 	kfree(ins);
@@ -359,9 +486,7 @@ static long do_submit(struct xlr8_ctx *c, void __user *arg)
 {
 	struct xlr8_dev *d = c->dev;
 	struct xlr8_submit s;
-	unsigned long fl;
 	long ret;
-	int k;
 
 	if (copy_from_user(&s, arg, sizeof(s)))
 		return -EFAULT;
@@ -377,25 +502,16 @@ static long do_submit(struct xlr8_ctx *c, void __user *arg)
 	ret = wait_event_interruptible(d->idle_wq, try_claim(d, c));
 	if (ret)
 		return ret;
+	if (c->prog && d->prog_owner != c) {        /* another user loaded a program meanwhile */
+		ret = write_prog(d, c->prog, c->nprog);
+		if (ret) {
+			release_dev(d);
+			return ret;
+		}
+		d->prog_owner = c;
+	}
 
-	spin_lock_irqsave(&d->lock, fl);
-	c->submitted = true;
-	c->done = false;
-	memset(&c->res, 0, sizeof(c->res));
-	d->running = true;
-	spin_unlock_irqrestore(&d->lock, fl);
-
-	wr(d, R_THREADS, s.threads);
-	wr(d, R_SRC, s.src);
-	wr(d, R_DST, s.dst);
-	wr(d, R_PROG, s.prog_base);
-	if (d->hw_version >= 0x200)
-		for (k = 0; k < XLR8_NARGS; k++)
-			wr(d, R_ARG0 + 4 * k, s.args[k]);
-	wr(d, R_MBASE, lower_32_bits(c->dma));
-	wr(d, R_MLIM, c->size);
-	mod_delayed_work(system_wq, &d->wd, msecs_to_jiffies(job_timeout_ms));
-	wr(d, R_CTRL, CTRL_START | CTRL_IRQ_EN);    /* CTRL is written whole: keep IRQ_EN set */
+	start_job(d, c, s.threads, s.src, s.dst, s.prog_base, s.args, lower_32_bits(c->dma), c->size);
 	return 0;
 }
 
@@ -563,6 +679,7 @@ static int xlr8_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 	platform_set_drvdata(pdev, d);
+	g_dev = d;
 	dev_info(&pdev->dev, "XLR8 hw %08x, irq %d, /dev/%s\n", rd(d, R_VER), d->irq, DRV_NAME);
 	return 0;
 }
@@ -571,6 +688,7 @@ static int xlr8_remove(struct platform_device *pdev)
 {
 	struct xlr8_dev *d = platform_get_drvdata(pdev);
 
+	g_dev = NULL;
 	misc_deregister(&d->misc);
 	cancel_delayed_work_sync(&d->wd);
 	hw_soft_reset(d);
