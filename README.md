@@ -9,85 +9,82 @@
 *From RTL to `/dev/xlr8`.*
 
 XLR8 takes the 8-lane SIMT GPU from [RAPTOR-SoC](../riscv/RAPTOR-SoC) and turns it into a
-memory-mapped accelerator on a PYNQ-Z2. The ARM cores run Linux. A kernel driver exposes the
-GPU as `/dev/xlr8`. A userspace app loads a GPU program, launches it, and reads back a rendered
-frame from DDR. The flagship demo is a **bouncing ball** rendered on the GPU, one thread per
-pixel, written out as an animation and checked against a Python golden model.
+memory-mapped accelerator on a PYNQ-Z2. The ARM cores run Linux, a kernel driver exposes the GPU as
+`/dev/xlr8` (and as a standard V4L2 video device), and a userspace library loads a GPU program,
+launches one thread per pixel, and reads the finished frame back from DDR.
 
-The GPU renders into a framebuffer in DDR, and userspace saves the frames as PNG/GIF or shows them in Jupyter.
-
-## Status
-
-Phases 0 to 8 are done and verified on the board: simulation, FPGA build (timing met at 50 MHz),
-hardware bring-up, a Linux driver, a userspace renderer, benchmarks against the ARM cores, and
-an 8x speedup from optimization. The GPU is also a standard V4L2 video device. See [docs/PLAN.md](docs/PLAN.md) and the phase
-documents; every number below is backed by a file in `results/`.
-
-![ball rendered on the GPU](results/demo/ball.gif)
-
-*120 frames rendered by the GPU in the FPGA, through `/dev/xlr8`, each checked pixel for pixel
-against a CPU render.*
-
-| Phase | Title | State |
-|---|---|---|
-| 0 | Import, baseline, tooling | done |
-| 1 | Ball kernel and golden model in simulation | done |
-| 2 | AXI wrapper (AXI4-Lite slave + AXI master bridge) | done |
-| 3 | Vivado build for PYNQ-Z2 | done (50 MHz, WNS +0.971 ns) |
-| 4 | Hardware bring-up from userspace (UIO / PYNQ MMIO) | done (1,000 frames exact on board) |
-| 5 | Linux kernel driver | done (/dev/xlr8, 1,000 frames exact over interrupts) |
-| 6 | Userspace library, renderer, animation | done (one command from cold boot to a verified GIF) |
-| 7 | Benchmarks against the ARM cores | done (GPU 16x to 218x slower than the A9; see results/benchmarks.md) |
-| 8 | Optimization and scale-out | done (ball 8.0x faster: arguments, posted writes; see results/optimization.md) |
-| 9 | Real images, Mandelbrot, Game of Life and a V4L2 device | done (a photo blurred on the GPU; `/dev/video0` streams 64x64 blur at 53.7 frames/s) |
-| 10 | Polish, demo, write-up | not started |
+Everything below was rendered by the GPU in the FPGA and checked pixel for pixel against a
+reference.
 
 ## Gallery
 
-Everything below was rendered by the GPU in the FPGA through Linux and checked pixel for pixel against a
-reference. Kernels and numbers: [results/fractal_life.md](results/fractal_life.md).
-
-| Mandelbrot, 128x128 | Conway's Game of Life, glider gun |
+| Bouncing ball, 120 frames | Conway's Game of Life, glider gun |
 |---|---|
-| <img src="results/demo/mandelbrot_full.png" width="320"> | <img src="results/demo/life.gif" width="320"> |
+| <img src="results/demo/ball.gif" width="320"> | <img src="results/demo/life.gif" width="320"> |
 
-| Zoomed Mandelbrot | Photo blurred on the GPU (before / after) |
+| Mandelbrot, 128x128 | Zoomed Mandelbrot |
 |---|---|
-| <img src="results/demo/mandelbrot_zoom.png" width="320"> | <img src="results/demo/blur_before_after.png" width="400"> |
+| <img src="results/demo/mandelbrot_full.png" width="320"> | <img src="results/demo/mandelbrot_zoom.png" width="320"> |
 
-## Quick start
+| Photo blurred on the GPU (before / after) |
+|---|
+| <img src="results/demo/blur_before_after.png" width="480"> |
 
-    make test                       # all simulation and host tests (needs verilator, python venv)
-    make venv                       # once, for numpy and Pillow
-    tools/board/demo.sh 120         # board: build, load, render, verify, fetch results/demo/*.gif
-                                    # (SSH_ASKPASS must print the board password)
+Kernels and numbers: [results/fractal_life.md](results/fractal_life.md).
 
-## Measured so far
+## How it fits together
+
+    userspace app / any V4L2 program
+            |  ioctl / mmap
+       /dev/xlr8, /dev/video0         Linux driver: one job at a time, IRQ-driven,
+            |                         watchdog, DMA buffer per client
+      AXI4-Lite control slave         registers, program RAM, perf counters
+            |
+       SIMT GPU (2 warps x 4 lanes)   16-bit ISA, one thread per pixel
+            |
+      AXI master bridge  ->  HP0  ->  DDR framebuffer
+
+The GPU program is loaded at run time through the program window, so the same bitstream runs the
+ball, the blur, Mandelbrot and Life. Details: [docs/PLAN.md](docs/PLAN.md) and
+[docs/REGISTER_MAP.md](docs/REGISTER_MAP.md).
+
+## Numbers
 
 | | |
 |---|---|
-| Timing, PYNQ-Z2 | met at 50 MHz, final build WNS +0.579 ns, WHS +0.051 ns (`results/timing_*_posted.rpt`, history in `results/optimization.md`) |
-| Resources | 32.9k LUT (62%), 24 DSP, 0 BRAM (final build) |
-| Ball frame, 64x64 | 52,741 cycles = 1.17 ms at 50 MHz after Phase 8 (9.4 ms before), 4,096 bus transactions |
-| Bridge into ideal memory (sim) | 192,001 cycles; real DDR adds about 10 cycles per transaction |
-| vs ARM (ball 64x64) | GPU 1.17 ms (9.4 ms before Phase 8); ARM scalar 0.051 ms, NEON 0.043 ms, NumPy 0.52 ms. GPU uses 1% of a core while running. |
-| V4L2 | `/dev/video0` blurs 64x64 frames on the GPU at 53.7 frames/s, every frame exact (`results/v4l2.md`) |
-| Real image | a photo blurred on the GPU through `/dev/xlr8`, 0 of 4,096 pixels differ from the CPU blur (`results/demo/blur_before_after.png`) |
+| Timing, PYNQ-Z2 | met at 50 MHz, WNS +0.579 ns, WHS +0.051 ns (`results/timing_*_posted.rpt`) |
+| Resources | 32.9k LUT (62%), 24 DSP, 0 BRAM |
+| Ball frame, 64x64 | 1.17 ms at 50 MHz, 8x faster than the first version (9.4 ms), 4,096 bus transactions |
+| vs ARM (ball 64x64) | ARM scalar 0.051 ms, NEON 0.043 ms, NumPy 0.52 ms. The GPU uses 1% of a core while running. |
+| Mandelbrot 128x128 | 108.6 ms per frame, all 16,384 pixels identical to the reference |
+| Game of Life 64x64 | 65 generations/s, 151 of 151 generations identical |
+| V4L2 | `/dev/video0` blurs 64x64 frames at 53.7 frames/s, every frame exact (`results/v4l2.md`) |
+| Real image | a photo blurred through `/dev/xlr8`, 0 of 4,096 pixels differ from the CPU blur |
 | Driver | 1,000 frames exact over interrupts, 4 concurrent processes, SIGKILL mid-job, watchdog, 10,000 open/close without a leak |
+
+Benchmarks: [results/benchmarks.md](results/benchmarks.md). Optimization history:
+[results/optimization.md](results/optimization.md).
+
+## Quick start
+
+    make venv                       # once, for numpy and Pillow
+    make test                       # all simulation and host tests (needs verilator)
+    tools/board/demo.sh 120         # board: build, load, render, verify, fetch results/demo/*.gif
+                                    # (SSH_ASKPASS must print the board password)
 
 ## Layout
 
-    docs/        plan, architecture, register map, phase specs, risks
+    docs/        plan, architecture, register map, phase specs and progress notes
     rtl/gpu/     vendored RAPTOR GPU (pinned revision)
     rtl/axi/     AXI4-Lite slave, AXI master bridge, program window
     rtl/top/     xlr8_top (the block-design IP wrapper)
     tb/          Verilator unit and system tests
-    sw/kernels/  GPU assembly kernels (ball, gradient, checker, ...)
-    sw/lib/      libxlr8 (userspace C library)
+    sw/kernels/  GPU assembly kernels (ball, blur, mandelbrot, life, ...)
+    sw/lib/      libxlr8 (userspace C library and Python binding)
     sw/apps/     renderer and benchmark programs
-    tools/       assembler, ISA simulator, golden models, frame diff
-    driver/      Linux kernel module
-    dts/         device-tree node / overlay
+    tools/       assembler, ISA simulator, golden models, board scripts
+    driver/      Linux kernel modules (xlr8, xlr8_v4l2)
+    dts/         device-tree overlay
     fpga/        Vivado Tcl build for the PYNQ-Z2
     results/     measured numbers only (timing, utilization, benchmarks)
 
