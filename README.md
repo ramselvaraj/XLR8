@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/xlr8-banner.png" alt="XLR8: create a GPU, control it from Linux" width="100%">
+</p>
+
 # XLR8
 
 **A custom SIMT GPU on FPGA fabric, exposed to Linux as a real device.**
