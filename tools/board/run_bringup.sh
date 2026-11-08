@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . tools/board/common.sh
 find_board
-OUT=${OUT:-build/fpga/out_50mhz_linux}
+OUT=${OUT:-build/fpga/out_50mhz_posted}
 FRAMES=${1:-20}
 EXTRA=${2:-}
 mkdir -p build/prog

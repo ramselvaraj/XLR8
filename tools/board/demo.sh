@@ -10,7 +10,7 @@ cd "$(dirname "$0")/../.."
 . tools/board/common.sh
 find_board
 FRAMES=${1:-120}
-OUT=${OUT:-build/fpga/out_50mhz_linux}
+OUT=${OUT:-build/fpga/out_50mhz_posted}
 echo "board: $BOARD"
 
 if [ ! -f "$OUT/xlr8.bit.bin" ] || [ "$OUT/xlr8.bit" -nt "$OUT/xlr8.bit.bin" ]; then
