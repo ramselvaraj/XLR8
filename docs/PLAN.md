@@ -18,13 +18,6 @@ Python golden model bit for bit.
 5. Frame time, resource use, and timing are measured and recorded in `results/`.
 6. The same render on the ARM cores is measured as a baseline.
 
-### Non-goals
-
-- HDMI or any display hardware.
-- A faster GPU than the ARM cores. Speed is measured and reported honestly, not promised.
-- OpenGL, Vulkan, or any graphics API.
-- Floating point.
-- Changing RAPTOR's CPU, caches, or CDC. XLR8 vendors only the GPU.
 
 ## 2. Starting point (verified against the RAPTOR-SoC tree)
 
@@ -252,7 +245,6 @@ Every comparison is exact, not tolerance-based.
 | No Vivado on Linux box | cannot build | settle which machine builds in Phase 0 |
 | Linux cache coherence on the frame buffer | stale pixels | use `dma_alloc_coherent` or a non-cacheable mapping, document the choice |
 | Timing failure at 50 MHz from the divider | build fails | keep DIV out of kernels, check the worst path in the report |
-| Scope creep into HDMI or V4L2 | never finishes | these are Phase 9, after the core demo works |
 
 ## 12. Resume framing (only after the matching phase is measured)
 

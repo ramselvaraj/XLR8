@@ -62,7 +62,3 @@ zero. Unknown ioctl returns `-ENOTTY`.
 - 1,000 ball frames exact through the driver, interrupt-driven (no polling).
 - Killing a process mid-job leaves the device usable.
 - `dmesg` shows no warnings, oopses, or leaked allocations.
-
-## Non-goals
-
-No V4L2, DRM, or dma-buf export (Phase 9). No multi-GPU instances.

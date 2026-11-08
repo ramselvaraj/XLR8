@@ -31,7 +31,3 @@ Python or C through `/dev/mem` or UIO.
 - 1,000 ball frames exact on hardware.
 - Measured `L` and frame time recorded in `results/hw_bringup.md`.
 - The cache-coherence behavior is documented with evidence.
-
-## Non-goals
-
-No kernel driver, no IRQ use (polling only), no animation output polish.

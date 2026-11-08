@@ -14,7 +14,7 @@ GPU as `/dev/xlr8`. A userspace app loads a GPU program, launches it, and reads 
 frame from DDR. The flagship demo is a **bouncing ball** rendered on the GPU, one thread per
 pixel, written out as an animation and checked against a Python golden model.
 
-No HDMI. Output is a framebuffer in DDR that userspace saves as PNG/GIF and views from Jupyter.
+The GPU renders into a framebuffer in DDR, and userspace saves the frames as PNG/GIF or shows them in Jupyter.
 
 ## Status
 
@@ -39,7 +39,7 @@ against a CPU render.*
 | 6 | Userspace library, renderer, animation | done (one command from cold boot to a verified GIF) |
 | 7 | Benchmarks against the ARM cores | done (GPU 16x to 218x slower than the A9; see results/benchmarks.md) |
 | 8 | Optimization and scale-out | done (ball 8.0x faster: arguments, posted writes; see results/optimization.md) |
-| 9 | Extended goals | real-image blur through Linux done; V4L2 mem2mem device next. Skipped by choice: screen output, dma-buf export, RISC-V host, formal/UVM |
+| 9 | Real images and a V4L2 device | real-image blur through Linux done; V4L2 mem2mem device in progress |
 | 10 | Polish, demo, write-up | not started |
 
 ## Quick start

@@ -57,7 +57,3 @@ wrapper in simulation with hostile bus behavior.
 - All tests pass under random stalls.
 - Ball frames exact through `xlr8_top`.
 - `results/bridge_latency_sim.md` records cycles per word with zero stalls (the floor for `L`).
-
-## Non-goals
-
-No bursts, no coalescing, no ISA change, no Vivado.

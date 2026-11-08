@@ -48,7 +48,3 @@ met, built by a script anyone can rerun.
   assuming margin.
 - The combinational instruction fetch may need to change if it only fits as distributed RAM at a
   size that costs too many LUTs.
-
-## Non-goals
-
-No Linux, no driver. No clock above 50 MHz yet.

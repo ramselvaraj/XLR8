@@ -49,7 +49,3 @@ independent Python model. No AXI and no FPGA yet.
 - `results/ball_kernel.md` states instruction count, registers used, and RTL cycles per frame.
 - If the kernel does not fit the register budget or needs an instruction the ISA lacks, this is
   recorded and the ISA change is moved to Phase 8 with a workaround here.
-
-## Non-goals
-
-No ISA changes. No bridge. No board.

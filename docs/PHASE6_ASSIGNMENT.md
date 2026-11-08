@@ -39,7 +39,3 @@ A clean C library and an app that renders the bouncing ball animation on the GPU
 - `--verify` reports zero mismatches.
 - The notebook displays the animation in the browser.
 - README has exact commands.
-
-## Non-goals
-
-No performance tuning here; that is Phases 7 and 8.

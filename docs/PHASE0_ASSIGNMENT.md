@@ -39,7 +39,3 @@ toolchain questions that would otherwise block later phases.
 - `docs/TOOLCHAIN.md` answers: where Vivado runs, board image and kernel version, cross
   compiler, board access method.
 - `rtl/gpu/SOURCE.md` exists.
-
-## Non-goals
-
-No new RTL. No Vivado project yet.
