@@ -37,3 +37,15 @@ nanoseconds. The driver now takes `FCLK_CLK0` from the device tree (`clocks = <&
 `clock-frequency = <50000000>`), sets and enables it, and logs `PL clock 50000000 Hz`. After a cold
 boot `fclk0` reads 50,000,000 Hz and the frame cost is back to about 462,000 cycles. All numbers
 above are from this fixed driver.
+
+## Re-run at 10x scale (2026-11-18, PYNQ-Z2 over WiFi)
+
+`tools/board/run_driver_tests.sh 1000 10000` on the board, fresh bitstream load, `xlr8.ko` rebuilt on the board:
+
+- `/dev/xlr8`: 1,000 frames exact, 1,000 interrupts; args-variant 1,000 frames exact; hung-job timeout, poll, 4 concurrent
+  processes x 60 frames, SIGKILL at 8 offsets, watchdog recovery (about 300 ms), all pass.
+- Leak loop: 10,000 open/alloc/close cycles, CmaFree 83,752 kB -> 83,744 kB (8 kB).
+- V4L2: 300 frames exact at 53.7 frames/s, dma-buf export, 10 STREAMOFFs with buffers queued, 6 killed streamers,
+  3 V4L2 streamers plus a `/dev/xlr8` renderer concurrently, all exact; 300 open/REQBUFS/mmap/close cycles flat.
+- `dmesg` shows the expected watchdog/timeout resets from the fault-injection tests and one `dma_alloc_coherent` failure
+  (16 KiB) during the allocation-exhaustion phase; no BUG, Oops or WARNING from the driver.
