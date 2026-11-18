@@ -48,4 +48,5 @@ above are from this fixed driver.
 - V4L2: 300 frames exact at 53.7 frames/s, dma-buf export, 10 STREAMOFFs with buffers queued, 6 killed streamers,
   3 V4L2 streamers plus a `/dev/xlr8` renderer concurrently, all exact; 300 open/REQBUFS/mmap/close cycles flat.
 - `dmesg` shows the expected watchdog/timeout resets from the fault-injection tests and one `dma_alloc_coherent` failure
-  (16 KiB) during the allocation-exhaustion phase; no BUG, Oops or WARNING from the driver.
+  (16 KiB, late in the run; all tests still reported PASS and I did not isolate which phase triggered it); no BUG, Oops
+  or WARNING from the driver.
